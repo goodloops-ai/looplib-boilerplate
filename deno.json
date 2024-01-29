@@ -1,0 +1,7 @@
+{
+    "lib": ["esnext"],
+    "imports": {
+        "looplib": "https://esm.sh/gh/goodloops-ai/looplib",
+        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib/"
+    }
+}
