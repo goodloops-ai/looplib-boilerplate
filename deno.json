@@ -1,7 +1,8 @@
 {
     "lib": ["esnext"],
     "imports": {
-        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@3c435f69a018d2b16dc6f82265798002713ffa39",
-        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@3c435f69a018d2b16dc6f82265798002713ffa39/"
+        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@03a2259ae650e6ea20295ce45e6568dbb5f0541f",
+        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@03a2259ae650e6ea20295ce45e6568dbb5f0541f/",
+        "schinquirer": "https://esm.sh/@luismayo/schinquirer"
     }
 }
