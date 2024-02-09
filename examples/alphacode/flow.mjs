@@ -93,9 +93,12 @@ const testCodeFn = async (trigger) => {
     let res;
     let worker;
     try {
-        worker = new Worker(import.meta.resolve("looplib/testworker.mjs"), {
-            type: "module",
-        });
+        worker = new Worker(
+            import.meta.resolve("@local/examples/alphacode/testworker.mjs"),
+            {
+                type: "module",
+            }
+        );
 
         res = await new Promise((resolve, reject) => {
             const timeout = setTimeout(() => resolve({ timeout: true }), 60);

@@ -3,6 +3,7 @@
     "imports": {
         "looplib": "https://esm.sh/gh/goodloops-ai/looplib@92152d5001019490776d985c3b935fdb540947d3",
         "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@92152d5001019490776d985c3b935fdb540947d3/",
-        "schinquirer": "https://esm.sh/@luismayo/schinquirer"
+        "schinquirer": "https://esm.sh/@luismayo/schinquirer",
+        "@local/": "./"
     }
 }
