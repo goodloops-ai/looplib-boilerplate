@@ -151,7 +151,8 @@ await workflow
     .addNode("challenges", challengesFn)
     .addNode(
         "solve",
-        "provide a single javascript function that takes a single 'lines' argument (an array of input lines), and returns an array of output lines. Let's take this step by step to make sure we get the right answer. provide your result as an esm module with the function as the default export"
+        "provide a single javascript function that takes a single 'lines' argument (an array of input lines), and returns an array of output lines. Let's take this step by step to make sure we get the right answer. provide your result as an esm module with the function as the default export",
+        { model: "gpt-3.5-turbo-16k" }
     )
     .connect("challenges", "solve")
     .addNode("parse", parseFn)
