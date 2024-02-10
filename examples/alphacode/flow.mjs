@@ -110,6 +110,7 @@ const testCodeFn = async (trigger) => {
             };
 
             worker.postMessage({
+                breakOnFailure: true,
                 challenge,
                 src: url,
                 types: ["public_tests", "private_tests", "generated_tests"],
