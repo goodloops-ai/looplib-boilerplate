@@ -1,5 +1,8 @@
 import { Workflow } from "looplib/sdk.mjs";
 
+const passAt = Deno.args[0];
+const passAtNum = passAt ? Number.parseInt(passAt) : 1;
+
 const workflow = new Workflow("test-flow");
 
 const challengesFn = async () => {
@@ -54,10 +57,25 @@ const challengesFn = async () => {
 
 const parseFn = async (trigger) => {
     const context = await trigger.getContext();
-    const codeMessage = _.get(
-        _.findLast(context, { node: "solve" }).packets,
-        "[1].data.content"
-    );
+    const codeMessage = _.chain(context)
+        .filter(
+            ({ packets }) =>
+                packets?.some(({ type }) => type === "message") || false
+        )
+        .map(
+            ({ packets }) =>
+                packets?.filter(({ type }) => type === "message") || []
+        )
+        .flatten()
+        .filter(({ data }) =>
+            /```(?:javascript)?\n([\s\S]*?)\n```/.test(data.content)
+        )
+        .last()
+        .get("data.content")
+        .value();
+
+    if (!codeMessage) return { type: "code", data: null };
+
     const codeBlockRegex = /```(?:javascript)?\n([\s\S]*?)\n```/;
     const codeBlockMatch = codeMessage.match(codeBlockRegex);
     const codeBlock = codeBlockMatch ? codeBlockMatch[1].trim() : null;
@@ -68,16 +86,16 @@ window.total = 0;
 const testCodeFn = async (trigger) => {
     const context = await trigger.getContext();
     // console.log("TEST CONTEXT", context);
-    const challengeNode = _.find(
+    const challengePacket = _.find(
         context,
-        ({ node, packets }) => node === "challenges" && packets.length
+        ({ packets }) =>
+            packets && packets?.some(({ type }) => type === "challenge")
     );
-    const challenge = challengeNode
-        ? _.get(challengeNode, "packets").find(
+    const challenge = challengePacket
+        ? _.get(challengePacket, "packets").find(
               ({ type }) => type === "challenge"
           ).data
         : null;
-
     // console.log("CHALLENGE", challenge, context);
     const code = context
         .reduce((acc, { packets }) => acc.concat(packets || []), [])
@@ -149,7 +167,7 @@ await workflow
     .addNode(
         "solve",
         "provide a single javascript function that takes a single 'lines' argument (an array of input lines), and returns an array of output lines. Let's take this step by step to make sure we get the right answer. provide your result as an esm module with the function as the default export",
-        { model: "gpt-3.5-turbo-16k" }
+        { model: "gpt-3.5-turbo-16k", n: passAtNum, branch: true }
     )
     .connect("challenges", "solve")
     .addNode("parse", parseFn)
