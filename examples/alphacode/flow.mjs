@@ -79,13 +79,10 @@ const testCodeFn = async (trigger) => {
         : null;
 
     // console.log("CHALLENGE", challenge, context);
-    const code = _.get(
-        _.find(
-            context,
-            ({ node, packets }) => node === "parse" && packets.length
-        ),
-        "packets"
-    ).find(({ type }) => type === "code").data;
+    const code = context
+        .reduce((acc, { packets }) => acc.concat(packets || []), [])
+        .reverse()
+        .find(({ type }) => type === "code").data;
 
     const blob = new Blob([code], { type: "application/javascript" });
     const url = URL.createObjectURL(blob);
@@ -133,7 +130,7 @@ const testCodeFn = async (trigger) => {
     console.log("DONE", ++total, res);
     return {
         type: "eval_results",
-        data: { name: challenge.name, results: res, code },
+        data: { name: challenge.name, results: res, code, context },
     };
 };
 
