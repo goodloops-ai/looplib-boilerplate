@@ -19,11 +19,24 @@ const noCode = async (trigger) => {
         .flatten()
         .pop();
 
-    return !codePacket;
+    return !codePacket?.data?.code;
 };
 
 const hasCode = async (trigger) => {
-    return !(await noCode(trigger));
+    const context = await trigger.getContext();
+    const codePacket = _.chain(context)
+        .filter(
+            ({ packets }) =>
+                packets?.some(({ type }) => type === "code") || false
+        )
+        .map(
+            ({ packets }) =>
+                packets?.filter(({ type }) => type === "code") || []
+        )
+        .flatten()
+        .pop();
+
+    return !!codePacket?.data?.code;
 };
 
 const challengesFn = async () => {
