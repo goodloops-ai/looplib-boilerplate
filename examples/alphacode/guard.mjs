@@ -7,7 +7,7 @@ const workflow = new Workflow("test-flow");
 
 const noCode = async (trigger) => {
     const context = await trigger.getContext();
-    const codePacket = _.chain(context)
+    const codePacket = context
         .filter(
             ({ packets }) =>
                 packets?.some(({ type }) => type === "code") || false
@@ -16,15 +16,36 @@ const noCode = async (trigger) => {
             ({ packets }) =>
                 packets?.filter(({ type }) => type === "code") || []
         )
-        .flatten()
+        .flat()
         .pop();
 
-    return !codePacket?.data?.code;
+    if (codePacket?.data) {
+        return null;
+    }
+
+    const priorNoCode = context
+        .filter(
+            ({ packets }) =>
+                packets?.some(({ type }) => type === "nocode") || false
+        )
+        .map(
+            ({ packets }) =>
+                packets?.filter(({ type }) => type === "nocode") || []
+        )
+        .flat();
+
+    if (priorNoCode.length > 3) {
+        console.log("TOO MANY NO CODES", priorNoCode);
+        return null;
+    }
+
+    console.log("HAS NO CODE", codePacket?.data);
+    return [{ type: "nocode", data: {} }];
 };
 
 const hasCode = async (trigger) => {
     const context = await trigger.getContext();
-    const codePacket = _.chain(context)
+    const codePacket = context
         .filter(
             ({ packets }) =>
                 packets?.some(({ type }) => type === "code") || false
@@ -33,10 +54,15 @@ const hasCode = async (trigger) => {
             ({ packets }) =>
                 packets?.filter(({ type }) => type === "code") || []
         )
-        .flatten()
+        .flat()
         .pop();
 
-    return !!codePacket?.data?.code;
+    if (codePacket?.data) {
+        console.log("HAS CODE", codePacket.data);
+        return [{ type: "hascode", data: {} }];
+    }
+
+    return null;
 };
 
 const challengesFn = async () => {
@@ -200,7 +226,7 @@ await workflow
     .addNode("challenges", challengesFn)
     .addNode(
         "solve",
-        "provide a single javascript function that takes a single 'lines' argument (an array of input lines), and returns an array of output lines. Let's take this step by step to make sure we get the right answer. provide your result as an esm module with the function as the default export",
+        "provide a single javascript function that takes a single 'lines' argument (an array of input lines), and returns an array of output lines. Let's take this step by step to make sure we get the right answer. provide your result as an esm module with the function as the default export. do not wrap your code in a codeblock, just provide the raw text",
         { model: "gpt-3.5-turbo-16k", n: passAtNum, branch: true }
     )
     .connect("challenges", "solve")
@@ -208,10 +234,14 @@ await workflow
     .connect("solve", "parse")
     .addNode("test", testCodeFn)
     .connect("parse", "test", hasCode)
-    .addNode("nocode", () => ({ type: "error", data: "no code provided" }))
-    .connect("parse", "nocode", noCode)
+    .addNode(
+        "nocodefix",
+        "You failed to provide code that I could parse out of your response. Please provide a code block containing your complete solution."
+    )
+    .connect("parse", "nocodefix", noCode)
+    .connect("nocodefix", "parse")
     .addNode("aggregate", aggregateFn, "challenges")
     .connect("test", "aggregate")
     .output("./codeguard-results")
-    .log()
+    // .log()
     .execute();
