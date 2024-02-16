@@ -3,7 +3,7 @@ import { Workflow } from "looplib/sdk.mjs";
 const passAt = Deno.args[0];
 const passAtNum = passAt ? Number.parseInt(passAt) : 1;
 
-const workflow = new Workflow("test-flow");
+const workflow = new Workflow("guard-flow");
 
 const noCode = async (trigger) => {
     const context = await trigger.getContext();
@@ -206,9 +206,21 @@ const testCodeFn = async (trigger) => {
     }
 
     console.log("DONE", ++total, res);
+    const tries = context
+        .map(({ packets }) => packets)
+        .flat()
+        .filter(Boolean)
+        .filter(({ type }) => type === "eval_results").length;
+
     return {
         type: "eval_results",
-        data: { name: challenge.name, results: res, code, context },
+        data: {
+            name: challenge.name,
+            results: res,
+            tries,
+            code,
+            context,
+        },
     };
 };
 
@@ -222,11 +234,68 @@ const aggregateFn = async (trigger) => {
     return { type: "aggregate_results", data };
 };
 
+const passPublicTests = async (trigger) => {
+    const context = await trigger.getContext();
+    const results = context
+        .map(({ packets }) => packets)
+        .flat()
+        .filter(Boolean)
+        .filter(({ type }) => type === "eval_results")
+        .map(({ data }) => data.results);
+
+    console.log("PASS PUBLIC TESTS???", results);
+    return results.length > 3 || results.pop()?.public_tests?.fail === 0
+        ? [{ type: "passOrExhaust" }]
+        : null;
+};
+
+const failPublicTests = async (trigger) => {
+    const context = await trigger.getContext();
+    const results = context
+        .map(({ packets }) => packets)
+        .flat()
+        .filter(Boolean)
+        .filter(({ type }) => type === "eval_results")
+        .map(({ data }) => data.results);
+
+    const challenge = context
+        .map(({ packets }) => packets)
+        .flat()
+        .filter(Boolean)
+        .filter(({ type }) => type === "challenge")
+        .map(({ data }) => data)
+        .pop();
+
+    console.log("FAIL PUBLIC TESTS???", results);
+    const last = results.pop();
+    if (results.length < 3 && (last?.public_tests?.fail > 0 || last.timeout)) {
+        return [
+            {
+                type: "message",
+                data: {
+                    role: "user",
+                    content: [
+                        "public test data",
+                        challenge.public_tests.input
+                            .map(
+                                (i, idx) =>
+                                    `Test ${idx} Input: ${i}\nTest ${idx} Expected Output:\n${challenge.public_tests.output[idx]}`
+                            )
+                            .join("\n\n"),
+                    ].join("\n\n"),
+                },
+            },
+        ];
+    }
+
+    return null;
+};
+
 await workflow
     .addNode("challenges", challengesFn)
     .addNode(
         "solve",
-        "provide a single javascript function that takes a single 'lines' argument (an array of input lines), and returns an array of output lines. Let's take this step by step to make sure we get the right answer. provide your result as an esm module with the function as the default export. do not wrap your code in a codeblock, just provide the raw text",
+        "provide a single javascript function that takes a single 'lines' argument (an array of input lines), and returns an array of output lines. Let's take this step by step to make sure we get the right answer. provide your result as an esm module with the function as the default export.",
         { model: "gpt-3.5-turbo-16k", n: passAtNum, branch: true }
     )
     .connect("challenges", "solve")
@@ -241,7 +310,14 @@ await workflow
     .connect("parse", "nocodefix", noCode)
     .connect("nocodefix", "parse")
     .addNode("aggregate", aggregateFn, "challenges")
-    .connect("test", "aggregate")
+    .addNode(
+        "publicTestFix",
+        "You failed to pass one or more of the public tests. Please provide a solution that passes all the public tests.",
+        { model: "gpt-3.5-turbo-16k" }
+    )
+    .connect("test", "aggregate", passPublicTests)
+    .connect("test", "publicTestFix", failPublicTests)
+    .connect("publicTestFix", "parse")
     .output("./codeguard-results")
     // .log()
     .execute();
