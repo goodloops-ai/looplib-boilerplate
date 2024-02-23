@@ -4,6 +4,7 @@
         "looplib": "https://esm.sh/gh/goodloops-ai/looplib@21c487f90bbc34b32179ba65c144b16deebbdf1b",
         "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@21c487f90bbc34b32179ba65c144b16deebbdf1b/",
         "@local/": "./",
-        "rxjs": "https://esm.sh/rxjs"
+        "rxjs": "https://esm.sh/rxjs",
+        "graphlib": "https://esm.sh/@dagrejs/graphlib"
     }
 }

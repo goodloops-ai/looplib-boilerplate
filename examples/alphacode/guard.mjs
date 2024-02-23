@@ -5,7 +5,9 @@ import {
     Operable,
     Trigger,
 } from "looplib/modules/operable.mjs";
-import { takeUntil } from "rxjs";
+import { takeUntil, withLatestFrom, take } from "rxjs";
+import { testPool } from "./testpool.mjs";
+import { Graph, alg } from "graphlib";
 
 const maxLoops = (max, operable, output) => {
     const fn = (trigger) => {
@@ -26,8 +28,8 @@ const maxLoops = (max, operable, output) => {
     };
 };
 
-const passAt = Deno.args[0];
-const passAtNum = passAt ? Number.parseInt(passAt) : 1;
+// const passAt = Deno.args[0];
+// const passAtNum = passAt ? Number.parseInt(passAt) : 1;
 
 const workflow = new Operable(() => true);
 
@@ -70,12 +72,10 @@ const challenges$ = new Operable(async () => {
                 )
         );
 
-    return valids
-        .map((data) => ({
-            type: "challenge",
-            ...data,
-        }))
-        .slice(0, 10);
+    return valids.map((data) => ({
+        type: "challenge",
+        ...data,
+    }));
 });
 let i = 0;
 const parse$ = new Operable((trigger) => {
@@ -114,7 +114,6 @@ const hasNoCode$ = new Operable((trigger) => {
 window.total = 0;
 const testCode$ = new Operable(async (trigger) => {
     // touch the previous run to make this go in serial
-    !!trigger.previous;
     const challenge = trigger.findOne(({ type }) => type === "challenge");
 
     const code = trigger.findOne(
@@ -138,7 +137,16 @@ const testCode$ = new Operable(async (trigger) => {
         );
 
         res = await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => resolve({ timeout: true }), 60);
+            const timeout = setTimeout(
+                () => resolve({ timeout: true }),
+                60 * 1000
+            );
+
+            worker.onmessage = (e) => {
+                clearTimeout(timeout);
+                resolve(e.data);
+                worker.terminate();
+            };
 
             worker.onerror = (e) => {
                 clearTimeout(timeout);
@@ -157,21 +165,18 @@ const testCode$ = new Operable(async (trigger) => {
                 src: url,
                 types: ["public_tests", "private_tests", "generated_tests"],
             });
-
-            worker.onmessage = (event) => {
-                clearTimeout(timeout);
-                resolve(event.data);
-                worker.terminate();
-            };
         });
     } catch (e) {
-        if (worker) worker.terminate();
+        if (worker) {
+            worker.terminate();
+        }
         res = {
             error: e.toString(),
             stack: e.stack,
         };
     }
 
+    URL.revokeObjectURL(url);
     const tries = trigger.find(({ type }) => type === "eval_results").length;
 
     return {
@@ -189,11 +194,6 @@ const output$ = new Operable(() => {
 });
 
 const finish$ = operableCombine([output$], challenges$, true);
-
-finish$.$.subscribe((output) => {
-    console.log("FINISH", output.payload);
-    return true;
-});
 
 const failPublicTests$ = new Operable((trigger) => {
     const results = trigger.findOne(
@@ -261,8 +261,8 @@ workflow.pipe(
             ],
         };
     },
-    prompt(
-        `You are an expert coder at Google.
+    prompt({
+        prompt: `You are an expert coder at Google.
 
 Solve the programming challenge above following the rules as closely as possible
 
@@ -275,17 +275,19 @@ The code should:
 - It should return an array of output strings.
 - Do not use any comments in your code.
 
-Enclose your code in a markdown codeblock.`
-    ),
+Enclose your code in a markdown codeblock.`,
+        model: "gpt-4-0125-preview",
+    }),
     parse$
 );
 
 parse$.pipe(
     hasNoCode$,
     maxLoops(3, hasNoCode$, output$),
-    prompt(
-        "You failed to provide code that I could parse out of your response. Please provide a code block containing your complete solution."
-    ),
+    prompt({
+        prompt: "You failed to provide code that I could parse out of your response. Please provide a code block containing your complete solution.",
+        model: "gpt-4-0125-preview",
+    }),
     parse$
 );
 
@@ -294,9 +296,10 @@ parse$.pipe(hasCode, testCode$);
 testCode$.pipe(
     failPublicTests$,
     maxLoops(3, failPublicTests$, output$),
-    prompt(
-        "You failed to pass one or more of the public tests. Please provide a solution that passes all the public tests."
-    ),
+    prompt({
+        prompt: "You failed to pass one or more of the public tests. Please provide a solution that passes all the public tests.",
+        model: "gpt-4-0125-preview",
+    }),
     parse$
 );
 
@@ -306,13 +309,24 @@ const trigger = new Trigger(0, workflow);
 
 workflow.next(trigger);
 
-trigger
-    .toJson$()
-    .pipe(takeUntil(finish$.$))
-    .subscribe((json) => {
-        Deno.writeTextFile("./guardOutput.alexprompt2.json", json);
-    });
+// trigger
+//     .toJson$()
+//     .pipe(takeUntil(finish$.$))
+//     .subscribe((json) => {
+//     });
+finish$.$.pipe(take(1)).subscribe(() => {
+    const json = JSON.stringify(
+        alg.topsort(Trigger.graph).map((node) => {
+            return Trigger.graph.node(node).serialize();
+        }),
+        null,
+        2
+    );
 
-// setInterval(() => {
-//     console.log("TOTAL", Deno.memoryUsage().heapUsed / 1024 / 1024);
-// }, 10000);
+    Trigger.sub.unsubscribe();
+
+    Deno.writeTextFile("./guardOutput.alexprompt.memfix.4.json", json);
+    console.log("FINISH");
+});
+
+console.log("start");
