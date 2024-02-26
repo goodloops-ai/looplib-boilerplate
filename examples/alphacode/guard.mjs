@@ -1,39 +1,46 @@
 import { tableFromIPC } from "https://esm.sh/apache-arrow";
-import { partialContextSchema, prompt } from "looplib/modules/gpt.mjs";
 import {
     operableCombine,
     Operable,
+    operableFrom,
     Trigger,
-} from "looplib/modules/operable.mjs";
-import { takeUntil, withLatestFrom, take } from "rxjs";
-import { testPool } from "./testpool.mjs";
-import { Graph, alg } from "graphlib";
+    prompt,
+} from "looplib";
+import { take, pipe, map, debounceTime, takeUntil } from "rxjs";
+import { Graph, alg } from "@dagrejs/graphlib";
+import z from "zod";
 
-const maxLoops = (max, operable, output) => {
-    const fn = (trigger) => {
-        const count = trigger.find(operable).length;
-        if (count > max) {
-            return true;
-        }
-        return false;
+window.Trigger = Trigger;
+window.alg = alg;
+
+const path = Deno.args[0] || "./guardOutput";
+const nonce = Math.random().toString(36).substring(7);
+const inProgressPath = `${path}.inprogress.${nonce}.json`;
+const outputPath = `${path}.${nonce}.json`;
+const reportsPath = `${path}.reports.${nonce}.json`;
+
+function maxLoops(max, bail$) {
+    return guard(lessThan(max), bail$);
+}
+
+function lessThan(count) {
+    return function (trigger) {
+        // console.log("lessThan", trigger.find(this), this, count);
+        return trigger.find(this).length < count;
     };
+}
 
-    const guard$ = new Operable(fn);
-
-    guard$.pipe(output);
-
-    return (trigger) => {
-        guard$.next(trigger);
-        return !fn(trigger);
+function guard(condition, bail$) {
+    return function (trigger) {
+        condition = condition.bind(this);
+        const res = condition(trigger);
+        return res || bail$.next(trigger);
     };
-};
-
-// const passAt = Deno.args[0];
-// const passAtNum = passAt ? Number.parseInt(passAt) : 1;
+}
 
 const workflow = new Operable(() => true);
 
-const challenges$ = new Operable(async () => {
+const challenges$ = new Operable(async function () {
     console.log("Challenges");
     let table;
     try {
@@ -77,49 +84,15 @@ const challenges$ = new Operable(async () => {
         ...data,
     }));
 });
-let i = 0;
-const parse$ = new Operable((trigger) => {
-    const codeMessage = trigger.payload.messages
-        .filter(({ content }) =>
-            /```(?:javascript)?\n([\s\S]*?)\n```/.test(content)
-        )
-        ?.pop()?.content;
 
-    console.log("PARSE", i++);
+const test = async function (trigger) {
+    // await new Promise((resolve) => setTimeout(resolve, 1000));
+    // console.log("FROMDAG", trigger.fromDag);
+    // console.log(Trigger.graph.nodes());
+    // !!trigger.previous;
+    const challenge = trigger.findOne(_challenge);
 
-    if (!codeMessage) return { type: "code", data: null };
-
-    const codeBlockRegex = /```(?:javascript)?\n([\s\S]*?)\n```/;
-    const codeBlockMatch = codeMessage.match(codeBlockRegex);
-    const codeBlock = codeBlockMatch ? codeBlockMatch[1].trim() : null;
-    return { type: "code", data: codeBlock };
-});
-
-const assertCode = (trigger) => {
-    if (trigger.payload.type !== "code") {
-        throw new Error("Expected code type input");
-    }
-};
-
-const hasCode = (trigger) => {
-    assertCode(trigger);
-    return !!trigger.payload.data;
-};
-
-const hasNoCode$ = new Operable((trigger) => {
-    assertCode(trigger);
-    return !trigger.payload.data;
-});
-
-window.total = 0;
-const testCode$ = new Operable(async (trigger) => {
-    // touch the previous run to make this go in serial
-    const challenge = trigger.findOne(({ type }) => type === "challenge");
-
-    const code = trigger.findOne(
-        ({ type, data }) => type === "code" && data
-    )?.data;
-
+    const code = trigger.payload;
     if (!code || !challenge) {
         throw new Error("No code or challenge found");
     }
@@ -155,6 +128,7 @@ const testCode$ = new Operable(async (trigger) => {
             };
             console.log(
                 "DISPATCH TEST",
+                !!code,
                 challenge.index,
                 challenge.name,
                 Deno.memoryUsage()
@@ -177,90 +151,101 @@ const testCode$ = new Operable(async (trigger) => {
     }
 
     URL.revokeObjectURL(url);
-    const tries = trigger.find(({ type }) => type === "eval_results").length;
+    const tries = trigger.find(this).length;
 
     return {
         type: "eval_results",
         name: challenge.name,
-        results: res,
+        ...res,
         tries,
         code,
     };
-});
-
-const output$ = new Operable(() => {
-    console.log("got output");
-    return true;
-});
-
-const finish$ = operableCombine([output$], challenges$, true);
-
-const failPublicTests$ = new Operable((trigger) => {
-    const results = trigger.findOne(
-        ({ type }) => type === "eval_results"
-    )?.results;
-
-    if (!results) {
-        throw new Error("No results found");
-    }
-
-    const challenge = trigger.findOne(({ type }) => type === "challenge");
-
-    if (results.public_tests?.fail > 0 || results.timeout) {
-        return {
-            type: "partial",
-            messages: [
-                {
-                    role: "user",
-                    content: [
-                        "Public test data:",
-                        challenge.public_tests.input
-                            .map(
-                                (i, idx) =>
-                                    `Test ${idx} Input: ${i}\nTest ${idx} Expected Output:\n${challenge.public_tests.output[idx]}`
-                            )
-                            .join("\n\n"),
-                    ].join("\n\n"),
-                },
-            ],
-        };
-    }
-
-    return null;
-});
-
-const passPublicTests = async (trigger) => {
-    const results = trigger.findOne(
-        ({ type }) => type === "eval_results"
-    )?.results;
-
-    if (!results) {
-        throw new Error("No results found");
-    }
-
-    const challenge = trigger.findOne(({ type }) => type === "challenge");
-
-    if (results.public_tests?.fail === 0) {
-        return { type: "passPublic" };
-    }
-
-    return null;
 };
 
-let j = 0;
+const report$ = new Operable((trigger) => {
+    const results = trigger.findOne(
+        z.object({ type: z.literal("eval_results") }).passthrough()
+    );
+    const challenge = trigger.findOne(_challenge);
+    return {
+        type: "report",
+        results,
+        challenge: {
+            name: challenge.name,
+            description: challenge.description,
+            index: challenge.index,
+        },
+    };
+});
+
+const finish$ = operableCombine([report$], challenges$, true);
+
+const _challenge = z
+    .object({
+        type: z.literal("challenge"),
+    })
+    .passthrough();
+
+const addToContext = (prompt, query) => {
+    return pipe(
+        query,
+        map((payload) => {
+            // console.log("ADD TO CONTEXT", prompt, payload);
+            return {
+                type: "partial",
+                messages: [
+                    {
+                        role: "user",
+                        content: `${prompt}\n\n${payload}`,
+                    },
+                ],
+            };
+        })
+    );
+};
+
+const passedPublicTests = get(
+    z
+        .object({ public_tests: z.object({ fail: z.number().max(0) }) })
+        .passthrough()
+);
+
+const failedPublicTests = get(
+    z
+        .object({ public_tests: z.object({ fail: z.number().min(1) }) })
+        .passthrough()
+);
+
+const timeoutTests = get(z.object({ timeout: z.literal(true) }).passthrough());
+
+const parse$ = conditional({
+    code: get(/```(?:javascript)?\n([\s\S]*?)\n```/),
+    noCode: not(get(/```(?:javascript)?\n([\s\S]*?)\n```/)),
+});
+
 workflow.pipe(
     challenges$,
-    (trigger) => {
-        return {
-            type: "partial",
-            messages: [
-                {
-                    role: "user",
-                    content: trigger.payload.description,
-                },
-            ],
-        };
-    },
+    addToContext(
+        "You are going to solve the following challenge:",
+        get(
+            _challenge.transform((data) => {
+                return data.description;
+            })
+        )
+    ),
+    addToContext(
+        "These public tests will be used to check your work:",
+        findOne(
+            _challenge.transform((data) => {
+                return data.public_tests.input
+                    .map(
+                        (i, idx) =>
+                            `Test ${idx} Input:\n ${i}\nTest ${idx} Expected Output:\n${data.public_tests.output[idx]}`
+                    )
+                    .join("\n\n");
+            })
+        )
+    ),
     prompt({
         prompt: `You are an expert coder at Google.
 
@@ -276,34 +261,46 @@ The code should:
 - Do not use any comments in your code.
 
 Enclose your code in a markdown codeblock.`,
-        model: "gpt-4-0125-preview",
+        model: "gpt-3.5-turbo-16k",
     }),
     parse$
 );
 
-parse$.pipe(
-    hasNoCode$,
-    maxLoops(3, hasNoCode$, output$),
+const testResults$ = conditional({
+    pass: passedPublicTests,
+    fail: failedPublicTests,
+    timeout: timeoutTests,
+});
+
+parse$.code.pipe(test, testResults$);
+
+parse$.noCode.pipe(
+    maxLoops(3, report$),
     prompt({
-        prompt: "You failed to provide code that I could parse out of your response. Please provide a code block containing your complete solution.",
-        model: "gpt-4-0125-preview",
+        prompt: "You failed to provide parseable code. Please provide a code implementation that can be parsed and executed from a markdown code block.",
+        model: "gpt-3.5-turbo-16k",
     }),
     parse$
 );
+testResults$.pass.pipe(report$);
 
-parse$.pipe(hasCode, testCode$);
-
-testCode$.pipe(
-    failPublicTests$,
-    maxLoops(3, failPublicTests$, output$),
+testResults$.fail.pipe(
+    maxLoops(3, report$),
     prompt({
-        prompt: "You failed to pass one or more of the public tests. Please provide a solution that passes all the public tests.",
-        model: "gpt-4-0125-preview",
+        prompt: "You failed 1 or more of the public tests. Please provide an implementation that passes all Tests.",
+        model: "gpt-3.5-turbo-16k",
     }),
     parse$
 );
 
-testCode$.pipe(passPublicTests, output$);
+testResults$.timeout.pipe(
+    maxLoops(3, report$),
+    prompt({
+        prompt: "Your code took too long to execute. Please provide an implementation that executes in a reasonable amount of time.",
+        model: "gpt-3.5-turbo-16k",
+    }),
+    parse$
+);
 
 const trigger = new Trigger(0, workflow);
 
@@ -313,8 +310,9 @@ workflow.next(trigger);
 //     .toJson$()
 //     .pipe(takeUntil(finish$.$))
 //     .subscribe((json) => {
+//         Deno.writeTextFile(inProgressPath, json);
 //     });
-finish$.$.pipe(take(1)).subscribe(() => {
+finish$.$.pipe(take(1)).subscribe((trigger) => {
     const json = JSON.stringify(
         alg.topsort(Trigger.graph).map((node) => {
             return Trigger.graph.node(node).serialize();
@@ -325,8 +323,69 @@ finish$.$.pipe(take(1)).subscribe(() => {
 
     Trigger.sub.unsubscribe();
 
-    Deno.writeTextFile("./guardOutput.alexprompt.memfix.4.json", json);
-    console.log("FINISH");
+    Deno.writeTextFile(outputPath, json);
+
+    const reports = trigger.find(
+        z.object({ type: z.literal("report") }).passthrough()
+    );
+    Deno.writeTextFile(reportsPath, JSON.stringify(reports, null, 2));
+    const summary = reports.reduce(
+        (a, r) =>
+            !r.results.private_tests?.fail &&
+            !r.results.public_tests?.fail &&
+            !r.results.generated_tests?.fail
+                ? a + 1
+                : a,
+        0
+    );
+    console.log(
+        "Finished:",
+        summary,
+        "passes in",
+        reports.length,
+        "challenges"
+    );
 });
 
 console.log("start");
+function get(query) {
+    return map(function (trigger) {
+        // console.log("GET", trigger.get(query), trigger.payload);
+        const res = trigger.get(query);
+        return res;
+    });
+}
+
+function find(query) {
+    return map(function (trigger) {
+        return trigger.find(query);
+    });
+}
+
+function findOne(query) {
+    return map(function (trigger) {
+        return trigger.findOne(query);
+    });
+}
+
+function not(fn) {
+    return pipe(
+        fn,
+        map((res) => !res)
+    );
+}
+
+function passThrough(trigger) {
+    return trigger;
+}
+
+function conditional(conditions) {
+    const input$ = operableFrom(passThrough);
+
+    Object.entries(conditions).forEach(([key, value]) => {
+        input$[key] = operableFrom(value);
+        input$.pipe(input$[key]);
+    });
+
+    return input$;
+}

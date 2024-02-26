@@ -1,10 +1,11 @@
 {
     "lib": ["esnext"],
     "imports": {
-        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@21c487f90bbc34b32179ba65c144b16deebbdf1b",
-        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@21c487f90bbc34b32179ba65c144b16deebbdf1b/",
+        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@169ea59d8d851cabb4a5e8803b201a73bdd10e55",
+        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@169ea59d8d851cabb4a5e8803b201a73bdd10e55/",
         "@local/": "./",
         "rxjs": "https://esm.sh/rxjs",
-        "graphlib": "https://esm.sh/@dagrejs/graphlib"
+        "@dagrejs/graphlib": "https://esm.sh/@dagrejs/graphlib",
+        "zod": "https://esm.sh/zod"
     }
 }
