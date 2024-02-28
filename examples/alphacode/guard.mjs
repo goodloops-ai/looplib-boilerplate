@@ -6,9 +6,10 @@ import {
     Trigger,
     prompt,
 } from "looplib";
-import { take, pipe, map, debounceTime, takeUntil } from "rxjs";
+import { take, pipe, map, debounceTime, takeUntil, tap } from "rxjs";
 import { Graph, alg } from "@dagrejs/graphlib";
 import z from "zod";
+import filenamify from "filenamify";
 
 window.Trigger = Trigger;
 window.alg = alg;
@@ -40,8 +41,7 @@ function guard(condition, bail$) {
 
 const workflow = new Operable(() => true);
 
-const challenges$ = new Operable(async function () {
-    console.log("Challenges");
+const getValids = async function () {
     let table;
     try {
         const data = await Deno.readFile(
@@ -78,11 +78,26 @@ const challenges$ = new Operable(async function () {
                     })
                 )
         );
+    return valids;
+};
 
-    return valids.map((data) => ({
-        type: "challenge",
-        ...data,
-    }));
+const challenges$ = new Operable(async function () {
+    console.log("Challenges");
+    const valids = await getValids();
+
+    return valids
+        .map(({ index, name, description, public_tests }) => {
+            return {
+                index,
+                name,
+                description,
+                public_tests,
+            };
+        })
+        .map((data) => ({
+            type: "challenge",
+            ...data,
+        }));
 });
 
 const test = async function (trigger) {
@@ -90,14 +105,26 @@ const test = async function (trigger) {
     // console.log("FROMDAG", trigger.fromDag);
     // console.log(Trigger.graph.nodes());
     // !!trigger.previous;
-    const challenge = trigger.findOne(_challenge);
+    const valids = await getValids();
+    const __challenge = trigger.findOne(_challenge);
+    const challenge = valids.find((c) => c.index === __challenge.index);
 
-    const code = trigger.payload;
+    const code = trigger.payload.result;
     if (!code || !challenge) {
         throw new Error("No code or challenge found");
     }
 
-    const blob = new Blob([code], { type: "application/javascript" });
+    const preamble = `const newArray = (n, value) => {
+    if (n > 1000) {
+        throw new Error("allocation failure: array is too large");
+    }
+    const array = new Array(n);
+    array.fill(value);
+    return array;
+};
+`;
+
+    const blob = new Blob([preamble, code], { type: "application/javascript" });
     const url = URL.createObjectURL(blob);
     let res;
     let worker;
@@ -157,8 +184,6 @@ const test = async function (trigger) {
         type: "eval_results",
         name: challenge.name,
         ...res,
-        tries,
-        code,
     };
 };
 
@@ -213,52 +238,43 @@ const passedPublicTests = get(
 const failedPublicTests = get(
     z
         .object({ public_tests: z.object({ fail: z.number().min(1) }) })
-        .passthrough()
+        .passthrough(),
+    true
 );
 
-const timeoutTests = get(z.object({ timeout: z.literal(true) }).passthrough());
+const timeoutTests = get(
+    z.object({ timeout: z.literal(true) }).passthrough(),
+    true
+);
+
+const errorTests = get(
+    z.object({ error: z.string(), stack: z.string() }).passthrough(),
+    true
+);
 
 const parse$ = conditional({
-    code: get(/```(?:javascript)?\n([\s\S]*?)\n```/),
+    code: get(/```(?:javascript)?\n([\s\S]*?)\n```/, true),
     noCode: not(get(/```(?:javascript)?\n([\s\S]*?)\n```/)),
 });
 
 workflow.pipe(
     challenges$,
-    addToContext(
-        "You are going to solve the following challenge:",
-        get(
-            _challenge.transform((data) => {
-                return data.description;
-            })
-        )
-    ),
-    addToContext(
-        "These public tests will be used to check your work:",
-        findOne(
-            _challenge.transform((data) => {
-                return data.public_tests.input
-                    .map(
-                        (i, idx) =>
-                            `Test ${idx} Input:\n ${i}\nTest ${idx} Expected Output:\n${data.public_tests.output[idx]}`
-                    )
-                    .join("\n\n");
-            })
-        )
-    ),
     prompt({
         prompt: `You are an expert coder at Google.
 
 Solve the programming challenge above following the rules as closely as possible
 
-Create a sketch of the solution before proceeding to provide your full solution.
+Reason about the problem before proceeding to provide your full solution.
 
 The code should:
-- Be a stand-alone ECMAScript module with no external requirements.
-- It should have a function as the default export. It should have no external dependencies. 
+- It must be a standalone ECMAScript module with no dependencies.
+- It should have a function as the default export. It should have no external dependencies.
 - It should accept a single 'lines' argument (an array of input strings). 
 - It should return an array of output strings.
-- Do not use any comments in your code.
+- It should use a provided function 'newArray' to create arrays instead of the built-in Array constructor.
+  - newArray(n, value) returns an array of length n with each element set to value.
+  - the function will throw an error if n is greater than 1000.
+  - newArray is already defined in the global scope, you must not define or import it.
 
 Enclose your code in a markdown codeblock.`,
         model: "gpt-3.5-turbo-16k",
@@ -270,6 +286,7 @@ const testResults$ = conditional({
     pass: passedPublicTests,
     fail: failedPublicTests,
     timeout: timeoutTests,
+    error: errorTests,
 });
 
 parse$.code.pipe(test, testResults$);
@@ -285,7 +302,7 @@ parse$.noCode.pipe(
 testResults$.pass.pipe(report$);
 
 testResults$.fail.pipe(
-    maxLoops(3, report$),
+    maxLoops(5, report$),
     prompt({
         prompt: "You failed 1 or more of the public tests. Please provide an implementation that passes all Tests.",
         model: "gpt-3.5-turbo-16k",
@@ -294,7 +311,7 @@ testResults$.fail.pipe(
 );
 
 testResults$.timeout.pipe(
-    maxLoops(3, report$),
+    maxLoops(5, report$),
     prompt({
         prompt: "Your code took too long to execute. Please provide an implementation that executes in a reasonable amount of time.",
         model: "gpt-3.5-turbo-16k",
@@ -302,17 +319,40 @@ testResults$.timeout.pipe(
     parse$
 );
 
-const trigger = new Trigger(0, workflow);
+testResults$.error.pipe(
+    maxLoops(5, report$),
+    prompt({
+        prompt: "Your code threw an error. Please provide an implementation that does not throw an error.",
+        model: "gpt-3.5-turbo-16k",
+    }),
+    parse$
+);
 
-workflow.next(trigger);
+const triggers = [];
+triggers.push(
+    new Trigger(
+        {
+            run: Deno.args[0] ? parseInt(Deno.args[0]) : 0,
+        },
+        workflow
+    )
+);
 
-// trigger
-//     .toJson$()
-//     .pipe(takeUntil(finish$.$))
-//     .subscribe((json) => {
-//         Deno.writeTextFile(inProgressPath, json);
-//     });
-finish$.$.pipe(take(1)).subscribe((trigger) => {
+const timestamp = new Date().toISOString();
+
+triggers.forEach((trigger) => {
+    workflow.next(trigger);
+    trigger.toJson$().subscribe((json) => {
+        const inProgressPath = filenamify(
+            `${path}.inprogress.${timestamp}.${nonce}.${
+                trigger.findOne(z.object({ run: z.number() })).run
+            }.json`
+        );
+        Deno.writeTextFile(inProgressPath, json);
+    });
+});
+
+finish$.$.subscribe((trigger) => {
     const json = JSON.stringify(
         alg.topsort(Trigger.graph).map((node) => {
             return Trigger.graph.node(node).serialize();
@@ -321,7 +361,11 @@ finish$.$.pipe(take(1)).subscribe((trigger) => {
         2
     );
 
-    Trigger.sub.unsubscribe();
+    const { run } = trigger.findOne(z.object({ run: z.number() }));
+    const outputPath = filenamify(`${path}.${timestamp}.${nonce}.${run}.json`);
+    const reportsPath = filenamify(
+        `${path}.reports.${timestamp}.${nonce}.${run}.json`
+    );
 
     Deno.writeTextFile(outputPath, json);
 
@@ -339,6 +383,8 @@ finish$.$.pipe(take(1)).subscribe((trigger) => {
         0
     );
     console.log(
+        nonce,
+        run,
         "Finished:",
         summary,
         "passes in",
@@ -348,11 +394,14 @@ finish$.$.pipe(take(1)).subscribe((trigger) => {
 });
 
 console.log("start");
-function get(query) {
+function get(query, hidden = false) {
     return map(function (trigger) {
         // console.log("GET", trigger.get(query), trigger.payload);
         const res = trigger.get(query);
-        return res;
+        if (!res) {
+            return;
+        }
+        return { result: res, hidden };
     });
 }
 

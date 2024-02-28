@@ -1,11 +1,21 @@
 {
     "lib": ["esnext"],
     "imports": {
-        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@169ea59d8d851cabb4a5e8803b201a73bdd10e55",
-        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@169ea59d8d851cabb4a5e8803b201a73bdd10e55/",
+        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@ef00d2e0931e958ae82bbb408a6447175e09ce09/",
+        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@ef00d2e0931e958ae82bbb408a6447175e09ce09",
         "@local/": "./",
+        "yaml": "https://esm.sh/yaml",
+        "fast-equals": "https://esm.sh/fast-equals",
+        "zod-to-json-schema": "https://esm.sh/zod-to-json-schema",
+        "zod": "https://esm.sh/zod",
+        "uuid": "https://esm.sh/uuid",
+        "openai": "https://deno.land/x/openai@v4.26.1/mod.ts",
         "rxjs": "https://esm.sh/rxjs",
+        "schinquirer": "https://esm.sh/@luismayo/schinquirer",
+        "filenamify": "https://esm.sh/filenamify",
+        "graphlib": "https://esm.sh/@dagrejs/graphlib",
+        "is-pojo": "https://esm.sh/is-pojo",
         "@dagrejs/graphlib": "https://esm.sh/@dagrejs/graphlib",
-        "zod": "https://esm.sh/zod"
+        "filenamey": "https://esm.sh/filenamify"
     }
 }

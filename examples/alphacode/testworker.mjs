@@ -7,42 +7,39 @@ self.onmessage = async (event) => {
 
         for (const type of types) {
             let pass = 0;
-            let fail = 0;
+            const failures = [];
 
             for (const index in challenge[type].input) {
-                try {
-                    const inputStr = challenge[type].input[index];
-                    const inputLines = inputStr.trim().split("\n");
-                    const output = module.default(inputLines).join("\n").trim();
-                    const compare = challenge[type].output[index].trim();
+                const inputStr = challenge[type].input[index];
+                const inputLines = inputStr.trim().split("\n");
+                const output = module.default(inputLines).join("\n").trim();
+                const compare = challenge[type].output[index].trim();
 
-                    if (output == compare) {
-                        pass++;
-                    } else {
-                        fail++;
-                        if (breakOnFailure) {
-                            break;
-                        }
-                    }
-                } catch (e) {
-                    fail++;
+                if (output == compare) {
+                    pass++;
+                } else {
+                    const failure = {
+                        index: index,
+                        input: inputStr,
+                        expected: compare,
+                        got: output,
+                    };
+                    failures.push(failure);
                     if (breakOnFailure) {
                         break;
                     }
                 }
             }
 
-            results[type] = { pass, fail };
+            results[type] = { pass, fail: failures.length, failures };
 
-            if (fail > 0) {
-                if (breakOnFailure) {
-                    break;
-                }
+            if (failures.length > 0 && breakOnFailure) {
+                break;
             }
         }
 
         self.postMessage(results);
     } catch (e) {
-        self.postMessage({ error: e.toString() });
+        self.postMessage({ error: e.toString(), stack: e.stack });
     }
 };
