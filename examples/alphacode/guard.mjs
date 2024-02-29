@@ -212,6 +212,41 @@ const report$ = new Operable((trigger) => {
     };
 });
 
+let reflections = 0;
+report$
+    .pipe(
+        prompt({
+            prompt: `We are now done with this challenge. 
+List the following based on your experience:
+What types of errors did you make?
+What has this taught you about your own abilities and problem-solving skills?
+How could the instructions be improved? (not the challenge description, but the instructions for solving the challenge)
+
+If I provide you with a previous response, treat it as a starting point for your list and augment it with new insights.
+
+You will be reflecting on many challenges, so keep your reflections concise and to the point. Make them generalizable to your problem-solving process.
+
+It is imperative that you combine your reflections from all the challenges into a single document. This will be your final submission.
+
+If you are running out of space, retain the most important reflections and make them as concise as possible.
+`,
+            reducer: true,
+            model: "gpt-4-0125-preview",
+        })
+    )
+    .$.subscribe((trigger) => {
+        console.log("REPORT", trigger.payload);
+        const reflectPath = filenamify(
+            `${path}.reflect.${timestamp}.${nonce}.${++reflections}.md`
+        );
+
+        Deno.writeTextFile(
+            reflectPath,
+            trigger.payload.messages[trigger.payload.messages.length - 1]
+                .content
+        );
+    });
+
 const finish$ = operableCombine([report$], challenges$, true);
 
 const _challenge = z
@@ -260,10 +295,11 @@ const errorTests = get(
     z.object({ error: z.string(), stack: z.string() }).passthrough(),
     true
 );
+const regex = /```(?:javascript)?\n([\s\S]*?)\n```/;
 
 const parse$ = conditional({
-    code: get(/```(?:javascript)?\n([\s\S]*?)\n```/, true),
-    noCode: not(get(/```(?:javascript)?\n([\s\S]*?)\n```/)),
+    code: get(regex, true),
+    noCode: not(get(regex)),
 });
 
 workflow.pipe(
@@ -275,11 +311,12 @@ Solve the programming challenge above following the rules as closely as possible
 
 Reason about the problem before proceeding to provide your full solution.
 
-The code should:
+The code:
 - It must be a standalone ECMAScript module with no dependencies.
 - It should have a function as the default export. It should have no external dependencies.
 - It should accept a single 'lines' argument (an array of input strings). 
 - It should return an array of output strings.
+- It must not contain comments.
 - It should use a provided function 'newArray' to create arrays instead of the built-in Array constructor.
   - newArray(n, value) returns an array of length n with each element set to value.
   - the function will throw an error if n is greater than 1000.
@@ -304,7 +341,7 @@ parse$.code.pipe(test, testResults$);
 parse$.noCode.pipe(
     maxLoops(3, report$),
     prompt({
-        prompt: "You failed to provide parseable code. Please provide a code implementation that can be parsed and executed from a markdown code block.",
+        prompt: "You failed to provide parseable code, or you included comments in your code. Please provide a code implementation that can be parsed and executed from a markdown code block.",
         model: "gpt-4-0125-preview",
         concurrency: 50,
     }),
