@@ -125,6 +125,10 @@ const test = async function (trigger) {
 `;
 
     const blob = new Blob([preamble, code], { type: "application/javascript" });
+    // write the blob to a tmp file in the current directory named after the challenge name
+    const tmpFile = `./${filenamify(challenge.name)}.${timestamp}.${nonce}.js`;
+
+    await Deno.writeFile(tmpFile, new Uint8Array(await blob.arrayBuffer()));
     const url = URL.createObjectURL(blob);
     let res;
     let worker;
@@ -178,11 +182,14 @@ const test = async function (trigger) {
     }
 
     URL.revokeObjectURL(url);
+    //delete the tmp file
+    await Deno.remove(tmpFile);
     const tries = trigger.find(this).length;
 
     return {
         type: "eval_results",
         name: challenge.name,
+        tries,
         ...res,
     };
 };
@@ -277,7 +284,7 @@ The code should:
   - newArray is already defined in the global scope, you must not define or import it.
 
 Enclose your code in a markdown codeblock.`,
-        model: "gpt-3.5-turbo-16k",
+        model: "gpt-4-0125-preview",
     }),
     parse$
 );
@@ -295,7 +302,7 @@ parse$.noCode.pipe(
     maxLoops(3, report$),
     prompt({
         prompt: "You failed to provide parseable code. Please provide a code implementation that can be parsed and executed from a markdown code block.",
-        model: "gpt-3.5-turbo-16k",
+        model: "gpt-4-0125-preview",
     }),
     parse$
 );
@@ -305,7 +312,7 @@ testResults$.fail.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "You failed 1 or more of the public tests. Please provide an implementation that passes all Tests.",
-        model: "gpt-3.5-turbo-16k",
+        model: "gpt-4-0125-preview",
     }),
     parse$
 );
@@ -314,7 +321,7 @@ testResults$.timeout.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "Your code took too long to execute. Please provide an implementation that executes in a reasonable amount of time.",
-        model: "gpt-3.5-turbo-16k",
+        model: "gpt-4-0125-preview",
     }),
     parse$
 );
@@ -323,7 +330,7 @@ testResults$.error.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "Your code threw an error. Please provide an implementation that does not throw an error.",
-        model: "gpt-3.5-turbo-16k",
+        model: "gpt-4-0125-preview",
     }),
     parse$
 );
@@ -333,6 +340,7 @@ triggers.push(
     new Trigger(
         {
             run: Deno.args[0] ? parseInt(Deno.args[0]) : 0,
+            hidden: true,
         },
         workflow
     )
@@ -375,6 +383,7 @@ finish$.$.subscribe((trigger) => {
     Deno.writeTextFile(reportsPath, JSON.stringify(reports, null, 2));
     const summary = reports.reduce(
         (a, r) =>
+            r.results.public_tests?.pass &&
             !r.results.private_tests?.fail &&
             !r.results.public_tests?.fail &&
             !r.results.generated_tests?.fail
@@ -382,6 +391,9 @@ finish$.$.subscribe((trigger) => {
                 : a,
         0
     );
+
+    const violent = reports.filter((r) => !r.results?.public_tests);
+
     console.log(
         nonce,
         run,
@@ -389,7 +401,9 @@ finish$.$.subscribe((trigger) => {
         summary,
         "passes in",
         reports.length,
-        "challenges"
+        "challenges.",
+        "Violent failures:",
+        violent
     );
 });
 

@@ -12,20 +12,33 @@ self.onmessage = async (event) => {
             for (const index in challenge[type].input) {
                 const inputStr = challenge[type].input[index];
                 const inputLines = inputStr.trim().split("\n");
-                const output = module.default(inputLines).join("\n").trim();
-                const compare = challenge[type].output[index].trim();
+                try {
+                    const output = module.default(inputLines).join("\n").trim();
+                    const compare = challenge[type].output[index].trim();
 
-                if (output == compare) {
-                    pass++;
-                } else {
+                    if (output == compare) {
+                        pass++;
+                    } else {
+                        const failure = {
+                            index: index,
+                            input: inputStr,
+                            expected: compare,
+                            got: output,
+                        };
+                        failures.push(failure);
+                        if (breakOnFailure && type !== "public_tests") {
+                            break;
+                        }
+                    }
+                } catch (error) {
                     const failure = {
                         index: index,
                         input: inputStr,
-                        expected: compare,
-                        got: output,
+                        error: error.toString(),
+                        stack: error.stack,
                     };
                     failures.push(failure);
-                    if (breakOnFailure) {
+                    if (breakOnFailure && type !== "public_tests") {
                         break;
                     }
                 }
