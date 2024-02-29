@@ -126,7 +126,9 @@ const test = async function (trigger) {
 
     const blob = new Blob([preamble, code], { type: "application/javascript" });
     // write the blob to a tmp file in the current directory named after the challenge name
-    const tmpFile = `./${filenamify(challenge.name)}.${timestamp}.${nonce}.js`;
+    const tmpFile = `./testing-${filenamify(
+        challenge.name
+    )}.${timestamp}.${nonce}.js`;
 
     await Deno.writeFile(tmpFile, new Uint8Array(await blob.arrayBuffer()));
     const url = URL.createObjectURL(blob);
@@ -285,6 +287,7 @@ The code should:
 
 Enclose your code in a markdown codeblock.`,
         model: "gpt-4-0125-preview",
+        concurrency: 50,
     }),
     parse$
 );
@@ -303,6 +306,7 @@ parse$.noCode.pipe(
     prompt({
         prompt: "You failed to provide parseable code. Please provide a code implementation that can be parsed and executed from a markdown code block.",
         model: "gpt-4-0125-preview",
+        concurrency: 50,
     }),
     parse$
 );
@@ -313,6 +317,7 @@ testResults$.fail.pipe(
     prompt({
         prompt: "You failed 1 or more of the public tests. Please provide an implementation that passes all Tests.",
         model: "gpt-4-0125-preview",
+        concurrency: 50,
     }),
     parse$
 );
@@ -322,6 +327,7 @@ testResults$.timeout.pipe(
     prompt({
         prompt: "Your code took too long to execute. Please provide an implementation that executes in a reasonable amount of time.",
         model: "gpt-4-0125-preview",
+        concurrency: 50,
     }),
     parse$
 );
@@ -331,6 +337,7 @@ testResults$.error.pipe(
     prompt({
         prompt: "Your code threw an error. Please provide an implementation that does not throw an error.",
         model: "gpt-4-0125-preview",
+        concurrency: 50,
     }),
     parse$
 );
