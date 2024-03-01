@@ -216,23 +216,13 @@ let reflections = 0;
 report$
     .pipe(
         prompt({
-            prompt: `With the challenge now complete, reflect and document the following:
+            prompt: `We are now done with this challenge.
 
-- Enumerate any errors encountered (e.g., syntax, logic, off-by-one) during the challenge.
-- Propose enhancements to the instructions that guided the solution process.
-
-Incorporate insights from a previous reflection, using it as a foundation to build upon. Maintain brevity and focus in your reflection.
-
-Conclude with a revised set of instructions, intended for a future AI model. This model will only have access to the challenge description and these instructions. Craft the instructions to effectively direct the AI towards generating a solution that meets all test criteria.
-
-Adhere to the following guidelines for the revised instructions:
-
-- They should be comprehensive, clear, and structured to prevent the errors you encountered.
-- They should accumulate knowledge from previous reflections, and should be updated to reflect the current best practice.
-- They should exclusively address the initial creation of a solution, excluding debugging or testing phases.
-- They should present a complete, imperative set of steps that, alongside the challenge description, enable the generation of a solution.
-- They MUST be universally applicable, and MUST NOT containe challenge-specific details.
-- They MUST be formatted in markdown, enclosed within a code block.`,
+List the types of errors you encountered and how you resolved them.
+Did you get stuck?
+if I provide you with a prior list of errors, repeat them in your response.
+If you didn't get stuck or encounter any errors, simply repeat the accumulated report.
+`,
             reducer: true,
             model: "gpt-4-0125-preview",
         })
