@@ -97,7 +97,12 @@ const challenges$ = new Operable(async function () {
         .map((data) => ({
             type: "challenge",
             ...data,
-        }));
+        }))
+        .filter(({ index }) =>
+            [
+                61, 97, 71, 46, 89, 40, 98, 5, 84, 34, 100, 87, 58, 54, 44, 1,
+            ].includes(index)
+        );
 });
 
 const test = async function (trigger) {
@@ -217,12 +222,13 @@ report$
     .pipe(
         prompt({
             prompt: `We are now done with this challenge.
-
-List the types of errors you encountered and how you resolved them.
-Did you get stuck?
-if I provide you with a prior list of errors, repeat them in your response.
-If you didn't get stuck or encounter any errors, simply repeat the accumulated report.
+State the challenge name and index.
+Briefly list the errors you encountered and their types ( e.g. syntax error, runtime error, etc. ) and what you did to resolve them.
+If you encountered no errors, simply say "No errors encountered."
+I may provide you with prior challenges and their error lists. If so, repeat them in your response.
+Be extremely concise. Do not include any extraneous commentary.
 `,
+
             reducer: true,
             model: "gpt-4-0125-preview",
         })
