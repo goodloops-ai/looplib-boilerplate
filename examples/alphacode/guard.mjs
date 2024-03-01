@@ -212,6 +212,44 @@ const report$ = new Operable((trigger) => {
     };
 });
 
+let reflections = 0;
+report$
+    .pipe(
+        prompt({
+            prompt: `With the challenge now complete, reflect and document the following:
+
+- Enumerate any errors encountered (e.g., syntax, logic, off-by-one) during the challenge.
+- Propose enhancements to the instructions that guided the solution process.
+
+Incorporate insights from a previous reflection, using it as a foundation to build upon. Maintain brevity and focus in your reflection.
+
+Conclude with a revised set of instructions, intended for a future AI model. This model will only have access to the challenge description and these instructions. Craft the instructions to effectively direct the AI towards generating a solution that meets all test criteria.
+
+Adhere to the following guidelines for the revised instructions:
+
+- They should be comprehensive, clear, and structured to prevent the errors you encountered.
+- They should accumulate knowledge from previous reflections, and should be updated to reflect the current best practice.
+- They should exclusively address the initial creation of a solution, excluding debugging or testing phases.
+- They should present a complete, imperative set of steps that, alongside the challenge description, enable the generation of a solution.
+- They MUST be universally applicable, and MUST NOT containe challenge-specific details.
+- They MUST be formatted in markdown, enclosed within a code block.`,
+            reducer: true,
+            model: "gpt-4-0125-preview",
+        })
+    )
+    .$.subscribe((trigger) => {
+        console.log("REPORT", trigger.payload);
+        const reflectPath = filenamify(
+            `${path}.reflect.${timestamp}.${nonce}.${++reflections}.md`
+        );
+
+        Deno.writeTextFile(
+            reflectPath,
+            trigger.payload.messages[trigger.payload.messages.length - 1]
+                .content
+        );
+    });
+
 const finish$ = operableCombine([report$], challenges$, true);
 
 const _challenge = z
@@ -260,10 +298,11 @@ const errorTests = get(
     z.object({ error: z.string(), stack: z.string() }).passthrough(),
     true
 );
+const regex = /```(?:javascript)?\n([\s\S]*?)\n```/;
 
 const parse$ = conditional({
-    code: get(/```(?:javascript)?\n([\s\S]*?)\n```/, true),
-    noCode: not(get(/```(?:javascript)?\n([\s\S]*?)\n```/)),
+    code: get(regex, true),
+    noCode: not(get(regex)),
 });
 
 workflow.pipe(
@@ -275,18 +314,19 @@ Solve the programming challenge above following the rules as closely as possible
 
 Reason about the problem before proceeding to provide your full solution.
 
-The code should:
+The code:
 - It must be a standalone ECMAScript module with no dependencies.
 - It should have a function as the default export. It should have no external dependencies.
 - It should accept a single 'lines' argument (an array of input strings). 
 - It should return an array of output strings.
+- It must not contain comments.
 - It should use a provided function 'newArray' to create arrays instead of the built-in Array constructor.
   - newArray(n, value) returns an array of length n with each element set to value.
   - the function will throw an error if n is greater than 1000.
   - newArray is already defined in the global scope, you must not define or import it.
 
 Enclose your code in a markdown codeblock.`,
-        model: "gpt-4-0125-preview",
+        model: "gpt-3.5-turbo-16k",
         concurrency: 50,
     }),
     parse$
@@ -304,8 +344,8 @@ parse$.code.pipe(test, testResults$);
 parse$.noCode.pipe(
     maxLoops(3, report$),
     prompt({
-        prompt: "You failed to provide parseable code. Please provide a code implementation that can be parsed and executed from a markdown code block.",
-        model: "gpt-4-0125-preview",
+        prompt: "You failed to provide parseable code, or you included comments in your code. Please provide a code implementation that can be parsed and executed from a markdown code block.",
+        model: "gpt-3.5-turbo-16k",
         concurrency: 50,
     }),
     parse$
@@ -316,7 +356,7 @@ testResults$.fail.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "You failed 1 or more of the public tests. Please provide an implementation that passes all Tests.",
-        model: "gpt-4-0125-preview",
+        model: "gpt-3.5-turbo-16k",
         concurrency: 50,
     }),
     parse$
@@ -326,7 +366,7 @@ testResults$.timeout.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "Your code took too long to execute. Please provide an implementation that executes in a reasonable amount of time.",
-        model: "gpt-4-0125-preview",
+        model: "gpt-3.5-turbo-16k",
         concurrency: 50,
     }),
     parse$
@@ -336,7 +376,7 @@ testResults$.error.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "Your code threw an error. Please provide an implementation that does not throw an error.",
-        model: "gpt-4-0125-preview",
+        model: "gpt-3.5-turbo-16k",
         concurrency: 50,
     }),
     parse$
