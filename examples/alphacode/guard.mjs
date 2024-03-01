@@ -131,9 +131,9 @@ const test = async function (trigger) {
 
     const blob = new Blob([preamble, code], { type: "application/javascript" });
     // write the blob to a tmp file in the current directory named after the challenge name
-    const tmpFile = `./testing-${filenamify(
-        challenge.name
-    )}.${timestamp}.${nonce}.js`;
+    const tmpFile = filenamify(
+        `./testing-${challenge.name}.${timestamp}.${nonce}.js`
+    );
 
     await Deno.writeFile(tmpFile, new Uint8Array(await blob.arrayBuffer()));
     const url = URL.createObjectURL(blob);
