@@ -97,12 +97,12 @@ const challenges$ = new Operable(async function () {
         .map((data) => ({
             type: "challenge",
             ...data,
-        }))
-        .filter(({ index }) =>
-            [
-                61, 97, 71, 46, 89, 40, 98, 5, 84, 34, 100, 87, 58, 54, 44, 1,
-            ].includes(index)
-        );
+        }));
+    // .filter(({ index }) =>
+    //     [
+    //         61, 97, 71, 46, 89, 40, 98, 5, 84, 34, 100, 87, 58, 54, 44, 1,
+    //     ].includes(index)
+    // );
 });
 
 const test = async function (trigger) {
@@ -191,7 +191,7 @@ const test = async function (trigger) {
     URL.revokeObjectURL(url);
     //delete the tmp file
     await Deno.remove(tmpFile);
-    const tries = trigger.find(this).length;
+    const tries = trigger.find(this).length + 1;
 
     return {
         type: "eval_results",
@@ -225,11 +225,8 @@ report$
 State the challenge name and index.
 Briefly list the errors you encountered and their types ( e.g. syntax error, runtime error, etc. ) and what you did to resolve them.
 If you encountered no errors, simply say "No errors encountered."
-I may provide you with prior challenges and their error lists. If so, repeat them in your response.
-Be extremely concise. Do not include any extraneous commentary.
 `,
 
-            reducer: true,
             model: "gpt-4-0125-preview",
         })
     )
@@ -253,24 +250,6 @@ const _challenge = z
         type: z.literal("challenge"),
     })
     .passthrough();
-
-const addToContext = (prompt, query) => {
-    return pipe(
-        query,
-        map((payload) => {
-            // console.log("ADD TO CONTEXT", prompt, payload);
-            return {
-                type: "partial",
-                messages: [
-                    {
-                        role: "user",
-                        content: `${prompt}\n\n${payload}`,
-                    },
-                ],
-            };
-        })
-    );
-};
 
 const passedPublicTests = get(
     z
@@ -322,7 +301,7 @@ The code:
   - newArray is already defined in the global scope, you must not define or import it.
 
 Enclose your code in a markdown codeblock.`,
-        model: "gpt-3.5-turbo-16k",
+        model: "gpt-4-0125-preview",
         concurrency: 50,
     }),
     parse$
@@ -341,7 +320,7 @@ parse$.noCode.pipe(
     maxLoops(3, report$),
     prompt({
         prompt: "You failed to provide parseable code, or you included comments in your code. Please provide a code implementation that can be parsed and executed from a markdown code block.",
-        model: "gpt-3.5-turbo-16k",
+        model: "gpt-4-0125-preview",
         concurrency: 50,
     }),
     parse$
@@ -351,10 +330,16 @@ testResults$.pass.pipe(report$);
 testResults$.fail.pipe(
     maxLoops(5, report$),
     prompt({
-        prompt: "You failed 1 or more of the public tests. Please provide an implementation that passes all Tests.",
-        model: "gpt-3.5-turbo-16k",
+        prompt: "You failed 1 or more of the public tests. Reflect on the failure and identify what part of the code is broken. Do not fix the code until I ask you to.",
+        model: "gpt-4-0125-preview",
         concurrency: 50,
     }),
+    prompt({
+        prompt: "Fix the code and submit it again, in full, as a markdown code block.",
+        model: "gpt-4-0125-preview",
+        concurrency: 50,
+    }),
+
     parse$
 );
 
@@ -362,7 +347,7 @@ testResults$.timeout.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "Your code took too long to execute. Please provide an implementation that executes in a reasonable amount of time.",
-        model: "gpt-3.5-turbo-16k",
+        model: "gpt-4-0125-preview",
         concurrency: 50,
     }),
     parse$
@@ -372,7 +357,7 @@ testResults$.error.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "Your code threw an error. Please provide an implementation that does not throw an error.",
-        model: "gpt-3.5-turbo-16k",
+        model: "gpt-4-0125-preview",
         concurrency: 50,
     }),
     parse$
@@ -382,7 +367,7 @@ const triggers = [];
 triggers.push(
     new Trigger(
         {
-            run: Deno.args[0] ? parseInt(Deno.args[0]) : 0,
+            run: 0,
             hidden: true,
         },
         workflow
@@ -426,7 +411,7 @@ finish$.$.subscribe((trigger) => {
     Deno.writeTextFile(reportsPath, JSON.stringify(reports, null, 2));
     const summary = reports.reduce(
         (a, r) =>
-            r.results.public_tests?.pass &&
+            r.results?.public_tests?.pass &&
             !r.results.private_tests?.fail &&
             !r.results.public_tests?.fail &&
             !r.results.generated_tests?.fail
