@@ -10,15 +10,21 @@ import { take, pipe, map, debounceTime, takeUntil, tap } from "rxjs";
 import { Graph, alg } from "@dagrejs/graphlib";
 import z from "zod";
 import filenamify from "filenamify";
+import { generateReport, getChallenges, testSolution } from "./codium.mjs";
 
 window.Trigger = Trigger;
 window.alg = alg;
 
+const timestamp = new Date().toISOString();
 const path = Deno.args[0] || "./guardOutput";
 const nonce = Math.random().toString(36).substring(7);
-const inProgressPath = `${path}.inprogress.${nonce}.json`;
-const outputPath = `${path}.${nonce}.json`;
-const reportsPath = `${path}.reports.${nonce}.json`;
+
+const report$ = new Operable(generateReport());
+const challenges$ = new Operable(
+    getChallenges({
+        subset: [1],
+    })
+);
 
 function maxLoops(max, bail$) {
     return guard(lessThan(max), bail$);
@@ -40,182 +46,6 @@ function guard(condition, bail$) {
 }
 
 const workflow = new Operable(() => true);
-
-const getValids = async function () {
-    let table;
-    try {
-        const data = await Deno.readFile(
-            "./examples/alphacode/codechallenge_valid.arrow"
-        );
-        table = tableFromIPC(data);
-    } catch (e) {
-        table = await tableFromIPC(
-            fetch("./examples/alphacode/codechallenge_valid.arrow")
-        );
-    }
-    const rows = table.batches[0].toArray();
-    const valids = rows
-        .filter(({ is_valid_problem }) => is_valid_problem)
-        .map(
-            (
-                {
-                    name,
-                    description,
-                    public_tests,
-                    private_tests,
-                    generated_tests,
-                },
-                index
-            ) =>
-                JSON.parse(
-                    JSON.stringify({
-                        name,
-                        description,
-                        public_tests,
-                        private_tests,
-                        generated_tests,
-                        index,
-                    })
-                )
-        );
-    return valids;
-};
-
-const challenges$ = new Operable(async function () {
-    console.log("Challenges");
-    const valids = await getValids();
-
-    return valids
-        .map(({ index, name, description, public_tests }) => {
-            return {
-                index,
-                name,
-                description,
-                public_tests,
-            };
-        })
-        .map((data) => ({
-            type: "challenge",
-            ...data,
-        }));
-    // .filter(({ index }) =>
-    //     [
-    //         61, 97, 71, 46, 89, 40, 98, 5, 84, 34, 100, 87, 58, 54, 44, 1,
-    //     ].includes(index)
-    // );
-});
-
-const test = async function (trigger) {
-    // await new Promise((resolve) => setTimeout(resolve, 1000));
-    // console.log("FROMDAG", trigger.fromDag);
-    // console.log(Trigger.graph.nodes());
-    // !!trigger.previous;
-    const valids = await getValids();
-    const __challenge = trigger.findOne(_challenge);
-    const challenge = valids.find((c) => c.index === __challenge.index);
-
-    const code = trigger.payload.result;
-    if (!code || !challenge) {
-        throw new Error("No code or challenge found");
-    }
-
-    const preamble = `const newArray = (n, value) => {
-    if (n > 1000) {
-        throw new Error("allocation failure: array is too large");
-    }
-    const array = new Array(n);
-    array.fill(value);
-    return array;
-};
-`;
-
-    const blob = new Blob([preamble, code], { type: "application/javascript" });
-    // write the blob to a tmp file in the current directory named after the challenge name
-    const tmpFile = filenamify(
-        `./testing-${challenge.name}.${timestamp}.${nonce}.js`
-    );
-
-    await Deno.writeFile(tmpFile, new Uint8Array(await blob.arrayBuffer()));
-    const url = URL.createObjectURL(blob);
-    let res;
-    let worker;
-    try {
-        worker = new Worker(
-            import.meta.resolve("@local/examples/alphacode/testworker.mjs"),
-            {
-                type: "module",
-            }
-        );
-
-        res = await new Promise((resolve, reject) => {
-            const timeout = setTimeout(
-                () => resolve({ timeout: true }),
-                60 * 1000
-            );
-
-            worker.onmessage = (e) => {
-                clearTimeout(timeout);
-                resolve(e.data);
-                worker.terminate();
-            };
-
-            worker.onerror = (e) => {
-                clearTimeout(timeout);
-                resolve({ error: e });
-                worker.terminate();
-            };
-            console.log(
-                "DISPATCH TEST",
-                !!code,
-                challenge.index,
-                challenge.name,
-                Deno.memoryUsage()
-            );
-            worker.postMessage({
-                breakOnFailure: true,
-                challenge,
-                src: url,
-                types: ["public_tests", "private_tests", "generated_tests"],
-            });
-        });
-    } catch (e) {
-        if (worker) {
-            worker.terminate();
-        }
-        res = {
-            error: e.toString(),
-            stack: e.stack,
-        };
-    }
-
-    URL.revokeObjectURL(url);
-    //delete the tmp file
-    await Deno.remove(tmpFile);
-    const tries = trigger.find(this).length + 1;
-
-    return {
-        type: "eval_results",
-        name: challenge.name,
-        tries,
-        ...res,
-    };
-};
-
-const report$ = new Operable((trigger) => {
-    const results = trigger.findOne(
-        z.object({ type: z.literal("eval_results") }).passthrough()
-    );
-    const challenge = trigger.findOne(_challenge);
-    return {
-        type: "report",
-        results,
-        challenge: {
-            name: challenge.name,
-            description: challenge.description,
-            index: challenge.index,
-        },
-    };
-});
 
 let reflections = 0;
 report$
@@ -244,12 +74,6 @@ If you encountered no errors, simply say "No errors encountered."
     });
 
 const finish$ = operableCombine([report$], challenges$, true);
-
-const _challenge = z
-    .object({
-        type: z.literal("challenge"),
-    })
-    .passthrough();
 
 const passedPublicTests = get(
     z
@@ -314,7 +138,13 @@ const testResults$ = conditional({
     error: errorTests,
 });
 
-parse$.code.pipe(test, testResults$);
+parse$.code.pipe(
+    testSolution({
+        timestamp,
+        nonce,
+    }),
+    testResults$
+);
 
 parse$.noCode.pipe(
     maxLoops(3, report$),
@@ -373,8 +203,6 @@ triggers.push(
         workflow
     )
 );
-
-const timestamp = new Date().toISOString();
 
 triggers.forEach((trigger) => {
     workflow.next(trigger);
