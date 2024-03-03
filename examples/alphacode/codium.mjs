@@ -2,6 +2,7 @@ import { Operable } from "looplib";
 import z from "https://esm.sh/zod";
 import { tableFromIPC } from "https://esm.sh/apache-arrow";
 import filenamify from "https://esm.sh/filenamify";
+import { get } from "./std.mjs";
 
 const _challenge = z
     .object({
@@ -208,3 +209,26 @@ export const generateReport = () => (trigger) => {
         },
     };
 };
+
+export const passedPublicTests = get(
+    z
+        .object({ public_tests: z.object({ fail: z.number().max(0) }) })
+        .passthrough()
+);
+
+export const failedPublicTests = get(
+    z
+        .object({ public_tests: z.object({ fail: z.number().min(1) }) })
+        .passthrough(),
+    true
+);
+
+export const timeoutTests = get(
+    z.object({ timeout: z.literal(true) }).passthrough(),
+    true
+);
+
+export const errorTests = get(
+    z.object({ error: z.string(), stack: z.string() }).passthrough(),
+    true
+);

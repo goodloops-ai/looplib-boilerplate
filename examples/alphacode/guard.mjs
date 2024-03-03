@@ -10,7 +10,16 @@ import { take, pipe, map, debounceTime, takeUntil, tap } from "rxjs";
 import { Graph, alg } from "@dagrejs/graphlib";
 import z from "zod";
 import filenamify from "filenamify";
-import { generateReport, getChallenges, testSolution } from "./codium.mjs";
+import {
+    generateReport,
+    getChallenges,
+    testSolution,
+    passedPublicTests,
+    failedPublicTests,
+    timeoutTests,
+    errorTests,
+} from "./codium.mjs";
+import { conditional, get, not } from "./std.mjs";
 
 window.Trigger = Trigger;
 window.alg = alg;
@@ -97,6 +106,7 @@ const errorTests = get(
     z.object({ error: z.string(), stack: z.string() }).passthrough(),
     true
 );
+
 const regex = /```(?:javascript)?\n([\s\S]*?)\n```/;
 
 const parse$ = conditional({
@@ -262,49 +272,3 @@ finish$.$.subscribe((trigger) => {
         violent
     );
 });
-
-console.log("start");
-function get(query, hidden = false) {
-    return map(function (trigger) {
-        // console.log("GET", trigger.get(query), trigger.payload);
-        const res = trigger.get(query);
-        if (!res) {
-            return;
-        }
-        return { result: res, hidden };
-    });
-}
-
-function find(query) {
-    return map(function (trigger) {
-        return trigger.find(query);
-    });
-}
-
-function findOne(query) {
-    return map(function (trigger) {
-        return trigger.findOne(query);
-    });
-}
-
-function not(fn) {
-    return pipe(
-        fn,
-        map((res) => !res)
-    );
-}
-
-function passThrough(trigger) {
-    return trigger;
-}
-
-function conditional(conditions) {
-    const input$ = operableFrom(passThrough);
-
-    Object.entries(conditions).forEach(([key, value]) => {
-        input$[key] = operableFrom(value);
-        input$.pipe(input$[key]);
-    });
-
-    return input$;
-}
