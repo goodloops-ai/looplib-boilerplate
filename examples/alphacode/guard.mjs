@@ -19,7 +19,7 @@ import {
     timeoutTests,
     errorTests,
 } from "./codium.mjs";
-import { conditional, get, not } from "./std.mjs";
+import { conditional, get, not, passThrough, maxLoops } from "./std.mjs";
 
 window.Trigger = Trigger;
 window.alg = alg;
@@ -29,32 +29,9 @@ const path = Deno.args[0] || "./guardOutput";
 const nonce = Math.random().toString(36).substring(7);
 
 const report$ = new Operable(generateReport());
-const challenges$ = new Operable(
-    getChallenges({
-        subset: [1],
-    })
-);
+const challenges$ = new Operable(getChallenges());
 
-function maxLoops(max, bail$) {
-    return guard(lessThan(max), bail$);
-}
-
-function lessThan(count) {
-    return function (trigger) {
-        // console.log("lessThan", trigger.find(this), this, count);
-        return trigger.find(this).length < count;
-    };
-}
-
-function guard(condition, bail$) {
-    return function (trigger) {
-        condition = condition.bind(this);
-        const res = condition(trigger);
-        return res || bail$.next(trigger);
-    };
-}
-
-const workflow = new Operable(() => true);
+const workflow = new Operable(passThrough);
 
 let reflections = 0;
 report$
@@ -62,9 +39,8 @@ report$
         prompt({
             prompt: `We are now done with this challenge.
 State the challenge name and index.
-Briefly list the errors you encountered and their types ( e.g. syntax error, runtime error, etc. ) and what you did to resolve them.
-If you encountered no errors, simply say "No errors encountered."
-`,
+Briefly list the errors you encountered and clasify their types ( e.g. syntax error, runtime error, etc. ) and what you (or should have done) to resolve them. Do not mention challenge-specific details, just general code generation strategy issues. Then provide any changes that should be made to the initial code generation prompts or any of the subsequent prompts. 
+If you encountered no errors, simply say "No errors encountered."`,
 
             model: "gpt-4-0125-preview",
         })
@@ -84,29 +60,6 @@ If you encountered no errors, simply say "No errors encountered."
 
 const finish$ = operableCombine([report$], challenges$, true);
 
-const passedPublicTests = get(
-    z
-        .object({ public_tests: z.object({ fail: z.number().max(0) }) })
-        .passthrough()
-);
-
-const failedPublicTests = get(
-    z
-        .object({ public_tests: z.object({ fail: z.number().min(1) }) })
-        .passthrough(),
-    true
-);
-
-const timeoutTests = get(
-    z.object({ timeout: z.literal(true) }).passthrough(),
-    true
-);
-
-const errorTests = get(
-    z.object({ error: z.string(), stack: z.string() }).passthrough(),
-    true
-);
-
 const regex = /```(?:javascript)?\n([\s\S]*?)\n```/;
 
 const parse$ = conditional({
@@ -124,18 +77,23 @@ Solve the programming challenge above following the rules as closely as possible
 Reason about the problem before proceeding to provide your full solution.
 
 The code:
-- It must be a standalone ECMAScript module with no dependencies.
-- It should have a function as the default export. It should have no external dependencies.
-- It should accept a single 'lines' argument (an array of input strings). 
-- It should return an array of output strings.
-- It must not contain comments.
-- It should use a provided function 'newArray' to create arrays instead of the built-in Array constructor.
-  - newArray(n, value) returns an array of length n with each element set to value.
-  - the function will throw an error if n is greater than 1000.
-  - newArray is already defined in the global scope, you must not define or import it.
+  - must be a standalone ECMAScript module with no dependencies.
+  - should have a function as the default export. It should have no external dependencies.
+  - should accept a single 'lines' argument (an array of input strings). 
+  - should return an array of output strings.
+  - must not contain any code comments.
+  - should use a provided function 'newArray' to create arrays instead of the built-in Array constructor.
+
+Also:
+  - the Array constructor has been modified to disallow arrays of length > 1000.
+
+Make sure to consider edge cases, especially for problems involving conditional logic or specific constraints.
+
+You will have 6 attempts to get the code right, and this is the first.
 
 Enclose your code in a markdown codeblock.`,
         model: "gpt-4-0125-preview",
+        temperature: 0.4,
         concurrency: 50,
     }),
     parse$
@@ -159,9 +117,10 @@ parse$.code.pipe(
 parse$.noCode.pipe(
     maxLoops(3, report$),
     prompt({
-        prompt: "You failed to provide parseable code, or you included comments in your code. Please provide a code implementation that can be parsed and executed from a markdown code block.",
+        prompt: "You failed to provide parseable code, or you included comments in your code. Please provide a code implementation without comments, that can be parsed and executed from a markdown code block.",
         model: "gpt-4-0125-preview",
         concurrency: 50,
+        temperature: 0.2,
     }),
     parse$
 );
@@ -170,25 +129,33 @@ testResults$.pass.pipe(report$);
 testResults$.fail.pipe(
     maxLoops(5, report$),
     prompt({
-        prompt: "You failed 1 or more of the public tests. Reflect on the failure and identify what part of the code is broken. Do not fix the code until I ask you to.",
+        prompt: "Your code failed the public test(s) seen above. Reflect on the failure(s) and identify what part of the code is at fault. Do not fix the code until I ask you to.",
         model: "gpt-4-0125-preview",
         concurrency: 50,
+        temperature: 0.4,
     }),
     prompt({
         prompt: "Fix the code and submit it again, in full, as a markdown code block.",
         model: "gpt-4-0125-preview",
         concurrency: 50,
+        temperature: 0.2,
     }),
-
     parse$
 );
 
 testResults$.timeout.pipe(
     maxLoops(5, report$),
     prompt({
-        prompt: "Your code took too long to execute. Please provide an implementation that executes in a reasonable amount of time.",
+        prompt: "Your code took too long to execute and was terminated. Reflect on what may have caused this and identify what part of the code is at fault. Do not fix the code until I ask you to.",
         model: "gpt-4-0125-preview",
         concurrency: 50,
+        temperature: 0.4,
+    }),
+    prompt({
+        prompt: "Fix the code and submit it again, in full, as a markdown code block. Please provide an implementation that executes much more efficiently.",
+        model: "gpt-4-0125-preview",
+        concurrency: 50,
+        temperature: 0.2,
     }),
     parse$
 );
@@ -196,7 +163,7 @@ testResults$.timeout.pipe(
 testResults$.error.pipe(
     maxLoops(5, report$),
     prompt({
-        prompt: "Your code threw an error. Please provide an implementation that does not throw an error.",
+        prompt: "Your code threw an error you have discussed above. Please provide an implementation that does not throw this or any other error.",
         model: "gpt-4-0125-preview",
         concurrency: 50,
     }),
@@ -272,3 +239,94 @@ finish$.$.subscribe((trigger) => {
         violent
     );
 });
+
+// ----------------
+
+// import { Flow } from "looplib";
+// import {
+//     getChallenges,
+//     testSolution,
+//     generateReport,
+//     writeReports,
+// } from "looplib/codium";
+
+// import { parseCode } from "looplib/std";
+
+// import { prompt, trimContext } from "looplib/gpt";
+
+// const sessionFile = Deno.args[0] || "./session";
+// const reportFile = Deno.args[1] || "./report";
+
+// Flow(sessionFile)
+//     .connect(
+//         getChallenges,
+//         { challengeSet: "test", subset: [5, 7, 9] },
+//         "getChallenges"
+//     )
+//     .map(
+//         Flow()
+//             .connect(prompt, {
+//                 prompt: `You are an expert coder at Google.
+
+// Solve the programming challenge above following the rules as closely as possible
+
+// Reason about the problem before proceeding to provide your full solution.
+
+// The code:
+//   - must be a standalone ECMAScript module with no dependencies.
+//   - should have a function as the default export. It should have no external dependencies.
+//   - should accept a single 'lines' argument (an array of input strings).
+//   - should return an array of output strings.
+//   - must not contain any code comments.
+//   - should use a provided function 'newArray' to create arrays instead of the built-in Array constructor.
+
+// Also:
+//   - the Array constructor has been modified to disallow arrays of length > 1000.
+
+// Make sure to consider edge cases, especially for problems involving conditional logic or specific constraints.
+
+// You will have 6 attempts to get the code right, and this is the first.
+
+// Enclose your code in a markdown codeblock.`,
+//                 model: "gpt-4-0125-preview",
+//                 temperature: 0.4,
+//                 concurrency: 50,
+//             })
+//             .guard(
+//                 [parseCode, { language: "javascript" }],
+//                 Flow()
+//                     .maxLoops(3, generateReport, { exit_reason: "max_parse" })
+//                     .connect(prompt, {
+//                         prompt: "You failed to provide parseable code, or you included comments in your code. Please provide a code implementation without comments, that can be parsed and executed from a markdown code block.",
+//                         model: "gpt-4-0125-preview",
+//                         concurrency: 50,
+//                     })
+//                     .loop("parse"),
+//                 "parse"
+//             )
+//             .guard(
+//                 [testSolution, { timeout: 60, memory: 512 }],
+//                 Flow()
+//                     .maxLoops(3, generateReport, { exit_reason: "max_retry" })
+//                     .connect(prompt, {
+//                         prompt: "Your code failed as described above. Reflect on the failure(s) and identify what part of the code is at fault. Do not fix the code until I ask you to.",
+//                         model: "gpt-4-0125-preview",
+//                         concurrency: 50,
+//                     })
+//                     .connect(prompt, {
+//                         prompt: "Fix the code and submit it again, in full, as a markdown code block.",
+//                         model: "gpt-4-0125-preview",
+//                         concurrency: 50,
+//                     })
+//                     .loop("parse")
+//             )
+//             .connect(generateReport, { exit_reason: "complete" })
+//     )
+//     .connect(writeReports, { file: reportFile })
+//     .connect(trimContext, { index: -1 })
+//     .connect(prompt, {
+//         prompt: `We are now done with all the challenges.
+//         analyze the reports and provide a summary of common issues and how to address them.`,
+//     })
+//     .connect(trimContext, { index: -1, system: true })
+//     .loop("getChallenges", { count: 5 });
