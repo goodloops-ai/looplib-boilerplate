@@ -105,14 +105,23 @@ export const testSolution = ({
             throw new Error("No code or challenge found");
         }
 
-        const preamble = `const newArray = (n, value) => {
-    if (n > 1000) {
-        throw new Error("allocation failure: array is too large");
+        const preamble = `class CustomArray extends Array {
+constructor(...args) {
+    if (args.length === 1 && typeof args[0] === 'number') {
+      // Single numeric argument: Check for length restriction
+      if (args[0] > 1000) {
+        throw new Error('Array of length > 1000 is not allowed');
+      }
+      super(args[0]); // Call the Array constructor with the length
+    } else {
+      // Multiple arguments or a single non-numeric argument: Use as array elements
+      super(...args);
     }
-    const array = new Array(n);
-    array.fill(value);
-    return array;
-};
+  }
+}
+
+// Overwrite the global Array with the CustomArray
+self.Array = CustomArray;
 `;
 
         const blob = new Blob([preamble, code], {
