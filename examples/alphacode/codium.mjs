@@ -109,8 +109,8 @@ export const testSolution = ({
 constructor(...args) {
     if (args.length === 1 && typeof args[0] === 'number') {
       // Single numeric argument: Check for length restriction
-      if (args[0] > 1000) {
-        throw new Error('Array of length > 1000 is not allowed');
+      if (args[0] > 100000) {
+        throw new Error('Array has been overriden by a custom implementation. Array of length > 100000 is not allowed in this environment');
       }
       super(args[0]); // Call the Array constructor with the length
     } else {
@@ -120,8 +120,16 @@ constructor(...args) {
   }
 }
 
+function customArrayFactory(){
+  if (arguments.length === 1 && typeof arguments[0] === 'number') {
+    return Reflect.construct(CustomArray, arguments);
+  } else {
+    return new CustomArray(...arguments);
+  }
+}
+
 // Overwrite the global Array with the CustomArray
-self.Array = CustomArray;
+self.Array = customArrayFactory;
 `;
 
         const blob = new Blob([preamble, code], {
