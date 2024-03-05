@@ -105,31 +105,40 @@ export const testSolution = ({
             throw new Error("No code or challenge found");
         }
 
-        const preamble = `class CustomArray extends Array {
-constructor(...args) {
-    if (args.length === 1 && typeof args[0] === 'number') {
-      // Single numeric argument: Check for length restriction
-      if (args[0] > 100000) {
-        throw new Error('Array has been overriden by a custom implementation. Array of length > 100000 is not allowed in this environment');
-      }
-      super(args[0]); // Call the Array constructor with the length
-    } else {
-      // Multiple arguments or a single non-numeric argument: Use as array elements
-      super(...args);
+        const preamble = `(function() {
+    // Save a reference to the original Array constructor
+    const OriginalArray = Array;
+
+    // Define a new constructor function that wraps the original Array constructor
+    function ArrayExtended(...args) {
+        // Check if the new array size is more than 100000
+        if (args.length === 1 && typeof args[0] === 'number' && args[0] > 100000) {
+            throw new Error("self.Array has been modified in this environment. Array size cannot exceed 100000 items in this environment.");
+        }
+
+        // Use the original Array constructor's behavior for instantiation
+        const instance = new OriginalArray(...args);
+
+        // Copy all properties and methods from the original Array prototype to the new instance
+        // This ensures that methods like Array.from, Array.isArray, etc., are preserved
+        Object.setPrototypeOf(instance, ArrayExtended.prototype);
+
+        return instance;
     }
-  }
-}
 
-function customArrayFactory(){
-  if (arguments.length === 1 && typeof arguments[0] === 'number') {
-    return Reflect.construct(CustomArray, arguments);
-  } else {
-    return new CustomArray(...arguments);
-  }
-}
+    // Set the prototype of the new constructor to the original Array prototype
+    // This ensures that instances of ArrayExtended are still instances of Array
+    ArrayExtended.prototype = Object.create(OriginalArray.prototype);
+    // Ensure the constructor property points to the new constructor
+    ArrayExtended.prototype.constructor = ArrayExtended;
 
-// Overwrite the global Array with the CustomArray
-self.Array = customArrayFactory;
+    // Copy static methods from the original Array to the new constructor
+    // This includes methods like Array.from, Array.isArray, etc.
+    Object.setPrototypeOf(ArrayExtended, OriginalArray);
+
+    // Override the global Array with the new constructor
+    self.Array = ArrayExtended;
+})();
 `;
 
         const blob = new Blob([preamble, code], {
