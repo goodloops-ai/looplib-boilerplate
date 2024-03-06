@@ -131,14 +131,20 @@ parse$.noCode.pipe(
 );
 
 parse$.codeWithComments.pipe(
-    maxLoops(3, report$),
-    prompt({
-        prompt: "The code contains comments. Please provide a code implementation without comments, that can be parsed as a markdown code block. It is unacceptable to not provide code, or to give placeholders. It is clear that you can do this, please make sure to return a complete solution for evaluation and make sure it is in a markdown codeblock.",
-        model: "gpt-4-0125-preview",
-        concurrency: 50,
-        temperature: 0.3,
+    // Toggle which of these two blocks are active to enable/disable comment shibboleth
+    testSolution({
+        timestamp,
+        nonce,
     }),
-    parse$
+    testResults$
+    // maxLoops(3, report$),
+    // prompt({
+    //     prompt: "The code contains comments. Please provide a code implementation without comments, that can be parsed as a markdown code block. It is unacceptable to not provide code, or to give placeholders. It is clear that you can do this, please make sure to return a complete solution for evaluation and make sure it is in a markdown codeblock.",
+    //     model: "gpt-4-0125-preview",
+    //     concurrency: 50,
+    //     temperature: 0.3,
+    // }),
+    // parse$
 );
 testResults$.pass.pipe(report$);
 
