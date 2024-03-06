@@ -64,7 +64,7 @@ const codeRegex = /```(?:javascript|js)?\n([\s\S]*?)\n```/;
 const codeWithNoCommentsRegex =
     /```(?:javascript|js)?\n((?:(?!\/\/|\/\*|\*\/).)*(?:\n(?:(?!\/\/|\/\*|\*\/).)*)*)\n```/;
 const codeWithCommentsRegex =
-    /```(?:javascript|js)?\n(?:[\s\S]*?)(\/\/.*|\/\*[\s\S]*?\*\/)(?:[\s\S]*?)\n```/;
+    /```(?:javascript|js)\n([\s\S]*?(?:\/\/.*|\/\*[\s\S]*?\*\/)[\s\S]*?)\n```/;
 
 const parse$ = conditional({
     code: get(codeWithNoCommentsRegex, true),
