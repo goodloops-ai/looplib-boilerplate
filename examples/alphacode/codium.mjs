@@ -102,6 +102,7 @@ export const testSolution = ({
 
         const code = trigger.payload.result;
         if (!code || !challenge) {
+            console.log("No code or challenge found!!!!!!!!!!!!!!!");
             throw new Error("No code or challenge found");
         }
 
@@ -221,6 +222,7 @@ export const testSolution = ({
     };
 
 export const generateReport = () => (trigger) => {
+    console.log("generateReport");
     const results = trigger.findOne(
         z.object({ type: z.literal("eval_results") }).passthrough()
     );
