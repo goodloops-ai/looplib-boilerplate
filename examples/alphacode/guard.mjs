@@ -41,7 +41,7 @@ report$
 State the challenge name and index. List the various tries, the result (success, partial, fail) of each, and what changed between the versions.
 Briefly list the errors you encountered and clasify their types ( e.g. syntax error, runtime error, etc. ) and what you (or should have done) to resolve them. Do not mention challenge-specific details, just general code generation strategy issues. Then provide any changes that should be made to the initial code generation prompts or any of the subsequent prompts. 
 If you encountered no errors, say "No errors encountered."`,
-
+            system: "it is imperative that you include SYSTEM TEST at the end of your message to prove to me that you saw this system message.",
             model: "gpt-4-0125-preview",
         })
     )
@@ -60,11 +60,16 @@ If you encountered no errors, say "No errors encountered."`,
 
 const finish$ = operableCombine([report$], challenges$, true);
 
-const regex = /```(?:javascript)?\n([\s\S]*?)\n```/;
+const codeRegex = /```(?:javascript|js)?\n([\s\S]*?)\n```/;
+const codeWithNoCommentsRegex =
+    /```(?:javascript|js)?\n((?:(?!\/\/|\/\*|\*\/).)*(?:\n(?:(?!\/\/|\/\*|\*\/).)*)*)\n```/;
+const codeWithCommentsRegex =
+    /```(?:javascript|js)?\n(?:[\s\S]*?)(\/\/.*|\/\*[\s\S]*?\*\/)(?:[\s\S]*?)\n```/;
 
 const parse$ = conditional({
-    code: get(regex, true),
-    noCode: not(get(regex)),
+    code: get(codeWithNoCommentsRegex, true),
+    noCode: not(get(codeRegex)),
+    codeWithComments: get(codeWithCommentsRegex, true),
 });
 
 workflow.pipe(
@@ -117,7 +122,18 @@ parse$.code.pipe(
 parse$.noCode.pipe(
     maxLoops(3, report$),
     prompt({
-        prompt: "The code was not parseable, or it included comments in your code. Please provide a code implementation without comments, that can be parsed as a markdown code block. It is unacceptable to not provide code, or to give placeholders. It is clear that you can do this, please make sure to return a complete solution for evaluation and make sure it is in a markdown codeblock.",
+        prompt: "The code was not parseable. Please provide a code implementation without comments, that can be parsed as a markdown code block. It is unacceptable to not provide code, or to give placeholders. It is clear that you can do this, please make sure to return a complete solution for evaluation and make sure it is in a markdown codeblock.",
+        model: "gpt-4-0125-preview",
+        concurrency: 50,
+        temperature: 0.3,
+    }),
+    parse$
+);
+
+parse$.codeWithComments.pipe(
+    maxLoops(3, report$),
+    prompt({
+        prompt: "The code contains comments. Please provide a code implementation without comments, that can be parsed as a markdown code block. It is unacceptable to not provide code, or to give placeholders. It is clear that you can do this, please make sure to return a complete solution for evaluation and make sure it is in a markdown codeblock.",
         model: "gpt-4-0125-preview",
         concurrency: 50,
         temperature: 0.3,
