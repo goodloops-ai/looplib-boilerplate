@@ -125,7 +125,7 @@ const solveSingle$ = prompt({
     concurrency: 50,
 });
 
-workflow.pipe(challenges$, solveMulti$);
+workflow.pipe(challenges$, solveSingle$);
 solveSingle$.pipe(parse$);
 
 solveMulti$.pipe(
