@@ -1,15 +1,15 @@
 {
     "lib": ["esnext"],
     "imports": {
-        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@2b43df36edd364ca4d1ce6699f009c677fd3ad43/",
-        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@2b43df36edd364ca4d1ce6699f009c677fd3ad43",
+        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@69519216d435663a9fe599b06e13135c2311f22e/",
+        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@69519216d435663a9fe599b06e13135c2311f22e",
         "@local/": "./",
         "yaml": "https://esm.sh/yaml",
         "fast-equals": "https://esm.sh/fast-equals",
         "zod-to-json-schema": "https://esm.sh/zod-to-json-schema",
         "zod": "https://esm.sh/zod",
         "uuid": "https://esm.sh/uuid",
-        "openai": "https://deno.land/x/openai@v4.28.4/mod.ts",
+        "openai": "https://raw.githubusercontent.com/goodloops-ai/openai-node/together-4.28.4/deno/mod.ts",
         "rxjs": "https://esm.sh/rxjs",
         "schinquirer": "https://esm.sh/@luismayo/schinquirer",
         "filenamify": "https://esm.sh/filenamify",

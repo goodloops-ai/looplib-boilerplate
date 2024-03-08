@@ -20,6 +20,7 @@ import {
     errorTests,
 } from "./codium.mjs";
 import { conditional, get, not, passThrough, maxLoops } from "./std.mjs";
+import YAML from "https://esm.sh/yaml";
 
 window.Trigger = Trigger;
 window.alg = alg;
@@ -29,7 +30,11 @@ const path = Deno.args[0] || "./guardOutput";
 const nonce = Math.random().toString(36).substring(7);
 
 const report$ = new Operable(generateReport());
-const challenges$ = new Operable(getChallenges());
+const challenges$ = new Operable(
+    getChallenges({
+        subject: [1],
+    })
+);
 
 const workflow = new Operable(passThrough);
 
@@ -71,19 +76,15 @@ const parse$ = conditional({
     codeWithComments: get(codeWithCommentsRegex, true),
 });
 
-workflow.pipe(
-    challenges$,
-    prompt({
-        prompt: `Solve the programming challenge above following the rules and constraints as closely as possible.
+const solvePrompt = `Solve the programming challenge above following the rules and constraints as closely as possible.
 
 Reason carefully about the problem, break it down into parts, and consider what expertise is needed to solve it, before proceeding to provide your full solution.
 
 The code:
   - must be a standalone ECMAScript module with no dependencies.
-  - should have a function as the default export. It should have no external dependencies.
+  - should have a function as the default export.
   - should accept a single 'lines' argument (an array of input strings).
   - should return a single array of output strings.
-  - must not contain any code comments.
 
 IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Make sure to not scale array size with input because some of the tests you cannot see may be significantly larger than the one(s) you can see. In general avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
 
@@ -96,13 +97,83 @@ Some Tips:
 
 You will have 6 attempts to get the code right, and this is the first.
 
-Enclose your code in a markdown codeblock.`,
-        system: "You are a top-rated code assistant who always returns code when requested, and always pays the closest attention to instructions and other elements pointed to by the prompt. You never return partial code or refuse to return code.",
-        model: "gpt-4-0125-preview",
+Reminder, the code:
+ - must be a standalone ECMAScript module with no dependencies.
+ - should have a function as the default export.
+ - should accept a single 'lines' argument (an array of input strings).
+ - should return a single array of output strings.
+
+Enclose your code in a markdown codeblock.`;
+
+const solveMulti$ = prompt({
+    prompt: solvePrompt,
+    system: "You are a top-rated code assistant who always returns code when requested, and always pays the closest attention to instructions and other elements pointed to by the prompt. You never return partial code or refuse to return code.",
+    model: "gpt-4-0125-preview",
+    n: 5,
+    branch: false,
+    temperature: 0.3,
+    concurrency: 50,
+});
+
+const solveSingle$ = prompt({
+    prompt: solvePrompt,
+    system: "You are a top-rated code assistant who always returns code when requested, and always pays the closest attention to instructions and other elements pointed to by the prompt. You never return partial code or refuse to return code.",
+    model: "gpt-4-0125-preview",
+    n: 1,
+    branch: false,
+    temperature: 0.3,
+    concurrency: 50,
+});
+
+workflow.pipe(challenges$, solveMulti$);
+solveSingle$.pipe(parse$);
+
+solveMulti$.pipe(
+    prompt({
+        prompt: `Carefully review the solutions provided. 
+Can you identify where the various versions disagree in terms of implementation?`,
         temperature: 0.3,
+        model: "gpt-4-0125-preview",
         concurrency: 50,
     }),
-    parse$
+    prompt({
+        prompt: `For each area of disagreement, decide the best approach and write an updated specification indicating the right way to go. Write it as a straight specification with no code included.`,
+        temperature: 0.3,
+        model: "gpt-4-0125-preview",
+    }),
+    (trigger) => {
+        const addendum = trigger.payload.messages[1].content;
+        const challenge = trigger.findOne(
+            z.object({ type: z.literal("challenge") }).passthrough()
+        );
+        const oldPartial = trigger
+            .find(z.object({ type: z.literal("partial") }).passthrough())
+            .find(({ messages }) =>
+                messages.some(({ role, content }) =>
+                    content.includes("Additional Instructions:")
+                )
+            );
+
+        const newAddendum = `Additional Instructions:\n${
+            oldPartial ? oldPartial.messages[1].content : ""
+        }\n${addendum}`;
+
+        return {
+            type: "blind",
+            messages: [
+                {
+                    role: "user",
+                    content: YAML.stringify(challenge, null, 2),
+                },
+                {
+                    role: "user",
+                    content: newAddendum,
+                },
+            ],
+        };
+    },
+    maxLoops(3, solveSingle$),
+    solveMulti$
 );
 
 const testResults$ = conditional({
@@ -123,7 +194,7 @@ parse$.code.pipe(
 parse$.noCode.pipe(
     maxLoops(3, report$),
     prompt({
-        prompt: "The code was not parseable. Please provide a code implementation without comments, that can be parsed as a markdown code block. It is unacceptable to not provide code, or to give placeholders. It is clear that you can do this, please make sure to return a complete solution for evaluation and make sure it is in a markdown codeblock.",
+        prompt: "The code was not parseable. Please provide a code implementation that can be parsed as a markdown code block. It is unacceptable to not provide code, or to give placeholders. It is clear that you can do this, please make sure to return a complete solution for evaluation and make sure it is in a markdown codeblock.",
         model: "gpt-4-0125-preview",
         concurrency: 50,
         temperature: 0.3,
