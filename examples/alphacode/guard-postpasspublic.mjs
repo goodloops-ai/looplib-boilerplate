@@ -15,6 +15,7 @@ import {
     getChallenges,
     testSolution,
     passedPublicTests,
+    passedAllTests,
     failedPublicTests,
     timeoutTests,
     errorTests,
@@ -203,8 +204,15 @@ Can you identify where the various versions disagree in terms of implementation?
     solveMulti$
 );
 
-const testResults$ = conditional({
-    pass: passedPublicTests,
+const testPublic$ = conditional({
+    passPublic: passedPublicTests,
+    fail: failedPublicTests,
+    timeout: timeoutTests,
+    error: errorTests,
+});
+
+const testAll$ = conditional({
+    passAll: passedAllTests,
     fail: failedPublicTests,
     timeout: timeoutTests,
     error: errorTests,
@@ -214,8 +222,9 @@ parse$.code.pipe(
     testSolution({
         timestamp,
         nonce,
+        types: ["public_tests"],
     }),
-    testResults$
+    testPublic$
 );
 
 parse$.noCode.pipe(
@@ -234,8 +243,9 @@ parse$.codeWithComments.pipe(
     testSolution({
         timestamp,
         nonce,
+        types: ["public_tests"],
     }),
-    testResults$
+    testPublic$
     // maxLoops(3, report$),
     // prompt({
     //     prompt: "The code contains comments. Please provide a code implementation without comments, that can be parsed as a markdown code block. It is unacceptable to not provide code, or to give placeholders. It is clear that you can do this, please make sure to return a complete solution for evaluation and make sure it is in a markdown codeblock.",
@@ -245,9 +255,33 @@ parse$.codeWithComments.pipe(
     // }),
     // parse$
 );
-testResults$.pass.pipe(report$);
 
-testResults$.fail.pipe(
+const parsePastPublic$ = conditional({
+    code: get(codeRegex, true),
+    noCode: not(get(codeRegex)),
+});
+
+testPublic$.passPublic.pipe(
+    maxLoops(1, report$),
+    prompt({
+        prompt: "The code passed the public test(s) seen above. Please think about what other tests the code should pass, and what edge cases it should consider. Then, submit the code again, in full, as a markdown code block. Please provide an implementation that is your best shot at passing all tests, both the ones you know about, and others you may not yet have seen.",
+        model: "gpt-4-0125-preview",
+        concurrency: 50,
+        temperature: 0.3,
+    }),
+    parsePastPublic$
+);
+
+parsePastPublic$.code.pipe(
+    testSolution({
+        timestamp,
+        nonce,
+        types: ["public_tests", "private_tests", "generated_tests"],
+    }),
+    report$
+);
+
+testPublic$.fail.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "The code failed the public test(s) seen above. Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. Consider whether a minor change or a deep reconsideration of strategy is in order. Do not fix the code until I ask you to.",
@@ -270,7 +304,7 @@ testResults$.fail.pipe(
     parse$
 );
 
-testResults$.timeout.pipe(
+testPublic$.timeout.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "The code took too long to execute and was terminated. Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. Consider whether a minor change or a deep reconsideration of strategy is in order. Do not fix the code until I ask you to.",
@@ -293,7 +327,7 @@ testResults$.timeout.pipe(
     parse$
 );
 
-testResults$.error.pipe(
+testPublic$.error.pipe(
     maxLoops(5, report$),
     prompt({
         prompt: "The code threw an error as seen above. Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. Consider whether a minor change or a deep reconsideration of strategy is in order. Do not fix the code until I ask you to.",

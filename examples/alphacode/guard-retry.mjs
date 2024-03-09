@@ -218,16 +218,7 @@ parse$.code.pipe(
     testResults$
 );
 
-parse$.noCode.pipe(
-    maxLoops(3, report$),
-    prompt({
-        prompt: "The code was not parseable. Please provide a code implementation that can be parsed as a markdown code block. Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.",
-        model: "gpt-4-0125-preview",
-        concurrency: 50,
-        temperature: 0.3,
-    }),
-    parse$
-);
+parse$.noCode.pipe(retry(3, report$), solveSingle$);
 
 parse$.codeWithComments.pipe(
     // Toggle which of these two blocks are active to enable/disable comment shibboleth

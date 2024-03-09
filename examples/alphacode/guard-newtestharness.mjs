@@ -13,7 +13,7 @@ import filenamify from "filenamify";
 import {
     generateReport,
     getChallenges,
-    testSolution,
+    testSolution1,
     passedPublicTests,
     failedPublicTests,
     timeoutTests,
@@ -211,7 +211,7 @@ const testResults$ = conditional({
 });
 
 parse$.code.pipe(
-    testSolution({
+    testSolution1({
         timestamp,
         nonce,
     }),
@@ -231,7 +231,7 @@ parse$.noCode.pipe(
 
 parse$.codeWithComments.pipe(
     // Toggle which of these two blocks are active to enable/disable comment shibboleth
-    testSolution({
+    testSolution1({
         timestamp,
         nonce,
     }),

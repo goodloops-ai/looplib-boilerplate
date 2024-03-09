@@ -64,3 +64,14 @@ function guard(condition, bail$) {
         return res || bail$.next(trigger);
     };
 }
+
+export function retry(count, bail$) {
+    return function (trigger) {
+        const isRetry = trigger.find(this).length < count;
+        if (isRetry) {
+            return { retry: true, hidden: true };
+        }
+
+        return bail$.next(trigger);
+    };
+}

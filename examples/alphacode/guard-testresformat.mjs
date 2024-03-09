@@ -214,6 +214,7 @@ parse$.code.pipe(
     testSolution({
         timestamp,
         nonce,
+        refork: true,
     }),
     testResults$
 );
@@ -234,6 +235,7 @@ parse$.codeWithComments.pipe(
     testSolution({
         timestamp,
         nonce,
+        reformat: true,
     }),
     testResults$
     // maxLoops(3, report$),
