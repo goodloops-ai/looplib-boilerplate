@@ -1,8 +1,8 @@
 {
     "lib": ["esnext"],
     "imports": {
-        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@8844e51002f74ae77b426106678a6046fc3bd2fd/",
-        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@8844e51002f74ae77b426106678a6046fc3bd2fd",
+        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@5a8d792412495f3243a104d1710d40bf80a50097/",
+        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@5a8d792412495f3243a104d1710d40bf80a50097",
         "@local/": "./",
         "yaml": "https://esm.sh/yaml",
         "fast-equals": "https://esm.sh/fast-equals",

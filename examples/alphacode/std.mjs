@@ -58,7 +58,7 @@ function lessThan(count) {
     };
 }
 
-function guard(condition, bail$) {
+export function guard(condition, bail$) {
     return function (trigger) {
         condition = condition.bind(this);
         const res = condition(trigger);

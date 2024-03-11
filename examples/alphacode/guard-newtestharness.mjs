@@ -27,6 +27,7 @@ import {
     passThrough,
     maxLoops,
     retryTo,
+    guard,
 } from "./std.mjs";
 import YAML from "https://esm.sh/yaml";
 
@@ -48,29 +49,27 @@ State the challenge name and index. List the various tries, the result (success,
 
 Then, briefly list the errors you encountered and clasify their types ( e.g. syntax error, runtime error, etc. ) and what you (or should have done) to resolve them. Do not mention challenge-specific details, just general code generation strategy issues. Then provide any changes that should be made to the initial code generation prompts or any of the subsequent prompts. 
 If you encountered no errors, say "No errors encountered."`,
-    model: "gpt-4-0125-preview",
+    model: "gpt-3.5-turbo",
 });
 
 let reflections = 0;
-report$
-    .pipe(reportPrompt$, recoverNoAssistant(reportPrompt$))
-    .$.subscribe((trigger) => {
-        console.log("REPORT", trigger.payload);
-        const reflectPath = filenamify(
-            `${path}.reflect.${timestamp}.${nonce}.${++reflections}.md`
-        );
+report$.pipe(reportPrompt$).$.subscribe((trigger) => {
+    console.log("REPORT", trigger.payload);
+    const reflectPath = filenamify(
+        `${path}.reflect.${timestamp}.${nonce}.${++reflections}.md`
+    );
 
-        const lastPayload = trigger.findOne(
-            z.object({ type: z.literal("partial") }).passthrough()
-        );
+    const lastPayload = trigger.findOne(
+        z.object({ type: z.literal("partial") }).passthrough()
+    );
 
-        console.log("last");
+    console.log("last");
 
-        const lastMessage =
-            lastPayload.messages[lastPayload.messages.length - 1].content;
+    const lastMessage =
+        lastPayload.messages[lastPayload.messages.length - 1].content;
 
-        Deno.writeTextFile(reflectPath, lastMessage);
-    });
+    Deno.writeTextFile(reflectPath, lastMessage);
+});
 
 const finish$ = operableCombine([report$], challenges$, true);
 
@@ -121,7 +120,7 @@ Reminder, the code:
 
 Enclose your code in a markdown codeblock.`,
     system: "You are a top-rated code assistant who always returns code when requested, and always pays the closest attention to instructions and other elements pointed to by the prompt. You never return partial code or refuse to return code.",
-    model: "gpt-4-0125-preview",
+    model: "gpt-3.5-turbo",
     temperature: 0.3,
     maxRetries: 1,
     timeout: 10000,
@@ -138,27 +137,17 @@ const solveSingle$ = prompt({
     ...solveConfig,
 });
 
-function recoverNoAssistant(to$) {
-    return retryTo(Infinity, to$, async (trigger) => {
-        console.log("retryToAssistant", trigger.payload);
-        const { messages } = trigger.payload;
-        const last = messages[messages.length - 1];
-        const lastContent = last.content;
-        if (last.role !== "assistant" || !lastContent) {
-            console.log("GOT NO ASSISTANT MESSAGE, RETRYING in 10 seconds...");
-            await new Promise((resolve) => setTimeout(resolve, 10000));
-            console.log("EXECUTING RETRY");
-            return true;
-        }
-
-        return false;
-    });
+function reportError(report$) {
+    return guard((trigger) => {
+        console.log("GOT ERROR?", trigger.payload.error);
+        return !trigger.payload.error;
+    }, report$);
 }
 
 const solveSingle2$ = workflow.pipe(
     challenges$,
     solveSingle$,
-    recoverNoAssistant(solveSingle$)
+    reportError(report$)
 );
 solveSingle2$.pipe(parse$);
 
@@ -167,14 +156,16 @@ solveMulti$.pipe(
         prompt: `Carefully review the solutions provided. 
 Can you identify where the various versions disagree in terms of implementation?`,
         temperature: 0.3,
-        model: "gpt-4-0125-preview",
+        model: "gpt-3.5-turbo",
         concurrency: 50,
     }),
+    reportError(report$),
     prompt({
         prompt: `For each area of disagreement, decide the best approach and write an updated specification indicating the right way to go. Write it as a straight specification with no code included.`,
         temperature: 0.3,
-        model: "gpt-4-0125-preview",
+        model: "gpt-3.5-turbo",
     }),
+    reportError(report$),
     (trigger) => {
         const addendum = trigger.payload.messages[1].content;
         const challenge = trigger.findOne(
@@ -230,7 +221,7 @@ parse$.codeWithComments.pipe(testSolution$); // already connected to testResults
 
 const noCodePrompt$ = prompt({
     prompt: "The code was not parseable. Please provide a code implementation that can be parsed as a markdown code block. Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.",
-    model: "gpt-4-0125-preview",
+    model: "gpt-3.5-turbo",
     concurrency: 50,
     temperature: 0.3,
 });
@@ -238,7 +229,7 @@ const noCodePrompt$ = prompt({
 parse$.noCode.pipe(
     maxLoops(3, report$),
     noCodePrompt$,
-    recoverNoAssistant(noCodePrompt$),
+    reportError(report$),
     parse$
 );
 
@@ -246,7 +237,7 @@ testResults$.pass.pipe(report$);
 
 const failedPromptAnalyze$ = prompt({
     prompt: "The code failed the public test(s) seen above. Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. Consider whether a minor change or a deep reconsideration of strategy is in order. Do not fix the code until I ask you to.",
-    model: "gpt-4-0125-preview",
+    model: "gpt-3.5-turbo",
     concurrency: 50,
     temperature: 0.4,
 });
@@ -258,7 +249,7 @@ const failedPromptRewrite$ = prompt({
         Consider precomputing certain values to optimize the solution for efficiency, especially when dealing with large input sizes, could also be beneficial.  
         
         Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
-    model: "gpt-4-0125-preview",
+    model: "gpt-3.5-turbo",
     concurrency: 50,
     temperature: 0.3,
 });
@@ -266,15 +257,15 @@ const failedPromptRewrite$ = prompt({
 testResults$.fail.pipe(
     maxLoops(5, report$),
     failedPromptAnalyze$,
-    recoverNoAssistant(failedPromptAnalyze$),
+    reportError(report$),
     failedPromptRewrite$,
-    recoverNoAssistant(failedPromptRewrite$),
+    reportError(report$),
     parse$
 );
 
 const timeoutPromptAnalyze$ = prompt({
     prompt: "The code took too long to execute and was terminated. Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. Consider whether a minor change or a deep reconsideration of strategy is in order. Do not fix the code until I ask you to.",
-    model: "gpt-4-0125-preview",
+    model: "gpt-3.5-turbo",
     concurrency: 50,
     temperature: 0.4,
 });
@@ -286,7 +277,7 @@ const timeoutPromptRewrite$ = prompt({
         Consider precomputing certain values to optimize the solution for efficiency, especially when dealing with large input sizes, could also be beneficial.  
         
         Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
-    model: "gpt-4-0125-preview",
+    model: "gpt-3.5-turbo",
     concurrency: 50,
     temperature: 0.4,
 });
@@ -294,15 +285,15 @@ const timeoutPromptRewrite$ = prompt({
 testResults$.timeout.pipe(
     maxLoops(5, report$),
     timeoutPromptAnalyze$,
-    recoverNoAssistant(timeoutPromptAnalyze$),
+    reportError(report$),
     timeoutPromptRewrite$,
-    recoverNoAssistant(timeoutPromptRewrite$),
+    reportError(report$),
     parse$
 );
 
 const errorPromptAnalyze$ = prompt({
     prompt: "The code threw an error as seen above. Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. Consider whether a minor change or a deep reconsideration of strategy is in order. Do not fix the code until I ask you to.",
-    model: "gpt-4-0125-preview",
+    model: "gpt-3.5-turbo",
     concurrency: 50,
     temperature: 0.4,
 });
@@ -315,7 +306,7 @@ const errorPromptRewrite$ = prompt({
     Consider precomputing certain values to optimize the solution for efficiency, especially when dealing with large input sizes, could also be beneficial.  
     
     Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
-    model: "gpt-4-0125-preview",
+    model: "gpt-3.5-turbo",
     concurrency: 50,
     temperature: 0.3,
 });
@@ -323,9 +314,9 @@ const errorPromptRewrite$ = prompt({
 testResults$.error.pipe(
     maxLoops(5, report$),
     errorPromptAnalyze$,
-    recoverNoAssistant(errorPromptAnalyze$),
+    reportError(report$),
     errorPromptRewrite$,
-    recoverNoAssistant(errorPromptRewrite$),
+    reportError(report$),
     parse$
 );
 
