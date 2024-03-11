@@ -74,35 +74,6 @@ const parse$ = conditional({
     codeWithComments: get(codeWithCommentsRegex, true),
 });
 
-const solvePrompt = `Solve the programming challenge above following the rules and constraints as closely as possible.
-
-Reason carefully about the problem, break it down into parts, and consider what expertise is needed to solve it, before proceeding to provide your full solution.
-
-The code:
-  - must be a standalone ECMAScript module with no dependencies.
-  - should have a function as the default export.
-  - should accept a single 'lines' argument (an array of input strings).
-  - should return a single array of output strings.
-
-IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Make sure to not scale array size with input because some of the tests you cannot see may be significantly larger than the one(s) you can see. In general avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
-
-Make sure to consider edge cases, especially for problems involving conditional logic or specific constraints. Your code, in the final stage, will be tested against tests you will not see, so please consider the whole spectrum of possible valid inputs.
-
-Some Tips:
- - When working with BigInt, it's crucial to ensure that all operations and functions used are compatible with BigInt values. This includes avoiding standard Math functions unless explicitly converting BigInt to a number where necessary and safe.
- - The output checking is case sensitive, so make sure to get the case of any words right.
- - It is very important to match the output format and precision exactly as specified in the problem statement.
-
-You will have 6 attempts to get the code right, and this is the first.
-
-Reminder, the code:
- - must be a standalone ECMAScript module with no dependencies.
- - should have a function as the default export.
- - should accept a single 'lines' argument (an array of input strings).
- - should return a single array of output strings.
-
-Enclose your code in a markdown codeblock.`;
-
 const solveConfig = {
     prompt: `Solve the programming challenge above following the rules and constraints as closely as possible.
 
@@ -284,13 +255,19 @@ parsePastPublic$.code.pipe(
 testPublic$.fail.pipe(
     maxLoops(5, report$),
     prompt({
-        prompt: "The code failed the public test(s) seen above. Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. Consider whether a minor change or a deep reconsideration of strategy is in order. Do not fix the code until I ask you to.",
+        prompt: `The code failed the public test(s) seen above. 
+        
+        Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. 
+        
+        Consider whether a minor change or a deep reconsideration of strategy is in order. 
+        
+        Do not fix the code until I ask you to.`,
         model: "gpt-4-0125-preview",
         concurrency: 50,
         temperature: 0.4,
     }),
     prompt({
-        prompt: `Rewrite the code and submit it again, in full, as a markdown code block. Please provide an implementation that is your best shot at passing all tests, both the ones you know about, and others you may not yet have seen.
+        prompt: `Rewrite the code and submit it again, in full, as a markdown codeblock. Please provide an implementation that is your best shot at passing all tests, both the ones you know about, and others you may not yet have seen.
         
         Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.  
         
@@ -307,13 +284,19 @@ testPublic$.fail.pipe(
 testPublic$.timeout.pipe(
     maxLoops(5, report$),
     prompt({
-        prompt: "The code took too long to execute and was terminated. Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. Consider whether a minor change or a deep reconsideration of strategy is in order. Do not fix the code until I ask you to.",
+        prompt: `The code took too long to execute and was terminated. 
+        
+        Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault.
+        
+        Consider whether a minor change or a deep reconsideration of strategy is in order. 
+        
+        Do not fix the code until I ask you to.`,
         model: "gpt-4-0125-preview",
         concurrency: 50,
         temperature: 0.4,
     }),
     prompt({
-        prompt: `Rewrite the code and submit it again, in full, as a markdown code block. Please do your best to provide an implementation that executes much more efficiently.  
+        prompt: `Rewrite the code and submit it again, in full, as a markdown codeblock. Please do your best to provide an implementation that executes much more efficiently.  
         
         Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.  
         
@@ -336,7 +319,7 @@ testPublic$.error.pipe(
         temperature: 0.4,
     }),
     prompt({
-        prompt: `Rewrite the code and submit it again, in full, as a markdown code block. Please do your best to provide an implementation that does not throw this or any other error. 
+        prompt: `Rewrite the code and submit it again, in full, as a markdown codeblock. Please do your best to provide an implementation that does not throw this or any other error. 
         
         Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.  
         

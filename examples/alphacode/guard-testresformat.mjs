@@ -252,13 +252,19 @@ testResults$.pass.pipe(report$);
 testResults$.fail.pipe(
     maxLoops(5, report$),
     prompt({
-        prompt: "The code failed the public test(s) seen above. Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. Consider whether a minor change or a deep reconsideration of strategy is in order. Do not fix the code until I ask you to.",
+        prompt: `The code failed the public test(s) seen above. 
+        
+        Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. 
+        
+        Consider whether a minor change or a deep reconsideration of strategy is in order. 
+        
+        Do not fix the code until I ask you to.`,
         model: "gpt-4-0125-preview",
         concurrency: 50,
         temperature: 0.4,
     }),
     prompt({
-        prompt: `Rewrite the code and submit it again, in full, as a markdown code block. Please provide an implementation that is your best shot at passing all tests, both the ones you know about, and others you may not yet have seen.
+        prompt: `Rewrite the code and submit it again, in full, as a markdown codeblock. Please provide an implementation that is your best shot at passing all tests, both the ones you know about, and others you may not yet have seen.
         
         Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.  
         
@@ -275,13 +281,19 @@ testResults$.fail.pipe(
 testResults$.timeout.pipe(
     maxLoops(5, report$),
     prompt({
-        prompt: "The code took too long to execute and was terminated. Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault. Consider whether a minor change or a deep reconsideration of strategy is in order. Do not fix the code until I ask you to.",
+        prompt: `The code took too long to execute and was terminated. 
+        
+        Review the progression so far, and brainstorm on what may help improve the code so that it satisfies all requirements. Carefully read and reflect on the failure(s) and identify what part of the code is at fault.
+        
+        Consider whether a minor change or a deep reconsideration of strategy is in order. 
+        
+        Do not fix the code until I ask you to.`,
         model: "gpt-4-0125-preview",
         concurrency: 50,
         temperature: 0.4,
     }),
     prompt({
-        prompt: `Rewrite the code and submit it again, in full, as a markdown code block. Please do your best to provide an implementation that executes much more efficiently.  
+        prompt: `Rewrite the code and submit it again, in full, as a markdown codeblock. Please do your best to provide an implementation that executes much more efficiently.  
         
         Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.  
         
@@ -304,7 +316,7 @@ testResults$.error.pipe(
         temperature: 0.4,
     }),
     prompt({
-        prompt: `Rewrite the code and submit it again, in full, as a markdown code block. Please do your best to provide an implementation that does not throw this or any other error. 
+        prompt: `Rewrite the code and submit it again, in full, as a markdown codeblock. Please do your best to provide an implementation that does not throw this or any other error. 
         
         Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.  
         
