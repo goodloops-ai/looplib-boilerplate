@@ -21,6 +21,7 @@ import {
 } from "./codium.mjs";
 import { conditional, get, not, passThrough, maxLoops, retry } from "./std.mjs";
 import YAML from "https://esm.sh/yaml";
+import { join } from "https://deno.land/std/path/mod.ts";
 
 window.Trigger = Trigger;
 window.alg = alg;
@@ -28,7 +29,7 @@ window.alg = alg;
 const timestamp = new Date().toISOString();
 const path = Deno.args[0] || "./guardOutput";
 const nonce = Math.random().toString(36).substring(7);
-
+Deno.mkdirSync(nonce, { recursive: true });
 const report$ = new Operable(generateReport());
 const challenges$ = new Operable(getChallenges({}));
 
@@ -48,8 +49,11 @@ If you encountered no errors, say "No errors encountered."`,
     )
     .$.subscribe((trigger) => {
         console.log("REPORT", trigger.payload);
-        const reflectPath = filenamify(
-            `${path}.reflect.${timestamp}.${nonce}.${++reflections}.md`
+        const reflectPath = join(
+            nonce,
+            filenamify(
+                `${path}.reflect.${timestamp}.${nonce}.${++reflections}.md`
+            )
         );
 
         Deno.writeTextFile(
@@ -72,35 +76,6 @@ const parse$ = conditional({
     noCode: not(get(codeRegex)),
     codeWithComments: get(codeWithCommentsRegex, true),
 });
-
-const solvePrompt = `Solve the programming challenge above following the rules and constraints as closely as possible.
-
-Reason carefully about the problem, break it down into parts, and consider what expertise is needed to solve it, before proceeding to provide your full solution.
-
-The code:
-  - must be a standalone ECMAScript module with no dependencies.
-  - should have a function as the default export.
-  - should accept a single 'lines' argument (an array of input strings).
-  - should return a single array of output strings.
-
-IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Make sure to not scale array size with input because some of the tests you cannot see may be significantly larger than the one(s) you can see. In general avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
-
-Make sure to consider edge cases, especially for problems involving conditional logic or specific constraints. Your code, in the final stage, will be tested against tests you will not see, so please consider the whole spectrum of possible valid inputs.
-
-Some Tips:
- - When working with BigInt, it's crucial to ensure that all operations and functions used are compatible with BigInt values. This includes avoiding standard Math functions unless explicitly converting BigInt to a number where necessary and safe.
- - The output checking is case sensitive, so make sure to get the case of any words right.
- - It is very important to match the output format and precision exactly as specified in the problem statement.
-
-You will have 6 attempts to get the code right, and this is the first.
-
-Reminder, the code:
- - must be a standalone ECMAScript module with no dependencies.
- - should have a function as the default export.
- - should accept a single 'lines' argument (an array of input strings).
- - should return a single array of output strings.
-
-Enclose your code in a markdown codeblock.`;
 
 const solveConfig = {
     prompt: `Solve the programming challenge above following the rules and constraints as closely as possible.
@@ -327,10 +302,13 @@ triggers.push(
 triggers.forEach((trigger) => {
     workflow.next(trigger);
     trigger.toJson$().subscribe((json) => {
-        const inProgressPath = filenamify(
-            `${path}.inprogress.${timestamp}.${nonce}.${
-                trigger.findOne(z.object({ run: z.number() })).run
-            }.json`
+        const inProgressPath = join(
+            nonce,
+            filenamify(
+                `${path}.inprogress.${timestamp}.${nonce}.${
+                    trigger.findOne(z.object({ run: z.number() })).run
+                }.json`
+            )
         );
         Deno.writeTextFile(inProgressPath, json);
     });
@@ -346,9 +324,13 @@ finish$.$.subscribe((trigger) => {
     );
 
     const { run } = trigger.findOne(z.object({ run: z.number() }));
-    const outputPath = filenamify(`${path}.${timestamp}.${nonce}.${run}.json`);
-    const reportsPath = filenamify(
-        `${path}.reports.${timestamp}.${nonce}.${run}.json`
+    const outputPath = join(
+        nonce,
+        filenamify(`${path}.${timestamp}.${nonce}.${run}.json`)
+    );
+    const reportsPath = join(
+        nonce,
+        filenamify(`${path}.reports.${timestamp}.${nonce}.${run}.json`)
     );
 
     Deno.writeTextFile(outputPath, json);
