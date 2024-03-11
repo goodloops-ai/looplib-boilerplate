@@ -1,6 +1,6 @@
 import { map, pipe } from "rxjs";
 import { operableFrom } from "looplib";
-import { Trigger } from "../../../looplib/index.mjs";
+import { Trigger } from "looplib/index.mjs";
 console.log("start");
 export function get(query, hidden = false) {
     return map(function (trigger) {
