@@ -210,13 +210,13 @@ const testResults$ = conditional({
     error: errorTests,
 });
 
-parse$.code.pipe(
-    testSolution({
-        timestamp,
-        nonce,
-    }),
-    testResults$
-);
+const testSolution$ = testSolution({
+    timestamp,
+    nonce,
+    serial: true,
+});
+
+parse$.code.pipe(testSolution$, testResults$);
 
 parse$.noCode.pipe(
     maxLoops(3, report$),
@@ -231,10 +231,7 @@ parse$.noCode.pipe(
 
 parse$.codeWithComments.pipe(
     // Toggle which of these two blocks are active to enable/disable comment shibboleth
-    testSolution({
-        timestamp,
-        nonce,
-    }),
+    testSolution$,
     testResults$
     // maxLoops(3, report$),
     // prompt({

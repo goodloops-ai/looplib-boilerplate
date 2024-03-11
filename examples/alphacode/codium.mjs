@@ -96,9 +96,14 @@ export const testSolution = ({
     timestamp = new Date().toISOString(),
     nonce = Math.floor(Math.random() * 1000),
     reformat = false,
+    serial = true,
     types = ["public_tests", "private_tests", "generated_tests"],
 }) =>
     async function (trigger) {
+        if (serial) {
+            !!trigger.previous;
+        }
+
         const valids = await getChallenges({ includePrivate: true })();
         const __challenge = trigger.findOne(_challenge);
         const challenge = valids.find((c) => c.index === __challenge.index);
@@ -247,18 +252,20 @@ export const testSolution1 = ({
     nonce = Math.floor(Math.random() * 1000),
     concurrency = 1,
 }) =>
-    async function (trigger) {
-        const valids = await getChallenges({ includePrivate: true })();
-        const __challenge = trigger.findOne(_challenge);
-        const challenge = valids.find((c) => c.index === __challenge.index);
+    pipe(
+        mergeMap(async function (trigger) {
+            !!trigger.previous; // touch the previous value to ensure this goes in serial
+            const valids = await getChallenges({ includePrivate: true })();
+            const __challenge = trigger.findOne(_challenge);
+            const challenge = valids.find((c) => c.index === __challenge.index);
 
-        const code = trigger.payload.result;
-        if (!code || !challenge) {
-            console.log("No code or challenge found!!!!!!!!!!!!!!!");
-            throw new Error("No code or challenge found");
-        }
+            const code = trigger.payload.result;
+            if (!code || !challenge) {
+                console.log("No code or challenge found!!!!!!!!!!!!!!!");
+                throw new Error("No code or challenge found");
+            }
 
-        const preamble = `(function() {
+            const preamble = `(function() {
     // Save a reference to the original Array constructor
     const OriginalArray = Array;
 
@@ -294,131 +301,140 @@ export const testSolution1 = ({
 })();
 `;
 
-        const blob = new Blob([preamble, code], {
-            type: "application/javascript",
-        });
-        // write the blob to a tmp file in the current directory named after the challenge name
-        const tmpFile = filenamify(
-            `./testing-${challenge.name}.${timestamp}.${nonce}.js`
-        );
-
-        try {
-            await Deno.writeFile(
-                tmpFile,
-                new Uint8Array(await blob.arrayBuffer())
+            const blob = new Blob([preamble, code], {
+                type: "application/javascript",
+            });
+            // write the blob to a tmp file in the current directory named after the challenge name
+            const tmpFile = filenamify(
+                `./testing-${challenge.name}.${timestamp}.${nonce}.js`
             );
-        } catch (e) {}
-        const url = URL.createObjectURL(blob);
-        let total_results = {};
-        let worker;
-        try {
-            const types = ["public_tests", "private_tests", "generated_tests"];
 
-            for (const type of types) {
-                if (challenge[type]) {
-                    let pass = 0;
-                    const failures = [];
+            try {
+                await Deno.writeFile(
+                    tmpFile,
+                    new Uint8Array(await blob.arrayBuffer())
+                );
+            } catch (e) {}
+            const url = URL.createObjectURL(blob);
+            let total_results = {};
+            let worker;
 
-                    for (const index in challenge[type].input) {
-                        const expected = challenge[type].output[index];
-                        const input = challenge[type].input[index];
+            console.log("RUNNING TESTS", challenge.name, challenge.index);
+            try {
+                const types = [
+                    "public_tests",
+                    "private_tests",
+                    "generated_tests",
+                ];
 
-                        worker = new Worker(
-                            import.meta.resolve(
-                                "@local/examples/alphacode/testworker.single.mjs"
-                            ),
-                            {
-                                type: "module",
-                            }
-                        );
+                for (const type of types) {
+                    if (challenge[type]) {
+                        let pass = 0;
+                        const failures = [];
 
-                        const res = await new Promise((resolve, reject) => {
-                            const timeout = setTimeout(
-                                () =>
-                                    resolve({
-                                        pass: false,
-                                        timeout: true,
-                                        input,
-                                        expected,
-                                    }),
-                                10000
+                        for (const index in challenge[type].input) {
+                            const expected = challenge[type].output[index];
+                            const input = challenge[type].input[index];
+
+                            worker = new Worker(
+                                import.meta.resolve(
+                                    "@local/examples/alphacode/testworker.single.mjs"
+                                ),
+                                {
+                                    type: "module",
+                                }
                             );
 
-                            worker.onmessage = (e) => {
-                                clearTimeout(timeout);
-                                resolve(e.data);
-                                worker.terminate();
-                            };
+                            const res = await new Promise((resolve, reject) => {
+                                const timeout = setTimeout(
+                                    () =>
+                                        resolve({
+                                            pass: false,
+                                            timeout: true,
+                                            input,
+                                            expected,
+                                        }),
+                                    10000
+                                );
 
-                            worker.onerror = (e) => {
-                                clearTimeout(timeout);
-                                resolve({
-                                    pass: false,
-                                    error: e,
+                                worker.onmessage = (e) => {
+                                    clearTimeout(timeout);
+                                    resolve(e.data);
+                                    worker.terminate();
+                                };
+
+                                worker.onerror = (e) => {
+                                    clearTimeout(timeout);
+                                    resolve({
+                                        pass: false,
+                                        error: e,
+                                        input,
+                                        expected,
+                                    });
+                                    worker.terminate();
+                                };
+                                console.log(
+                                    "DISPATCH TEST",
+                                    !!code,
+                                    challenge.index,
+                                    challenge.name,
+                                    type,
+                                    index
+                                );
+                                worker.postMessage({
+                                    breakOnFailure: true,
+                                    challenge,
+                                    src: url,
                                     input,
                                     expected,
                                 });
-                                worker.terminate();
-                            };
-                            console.log(
-                                "DISPATCH TEST",
-                                !!code,
-                                challenge.index,
-                                challenge.name,
-                                Deno.memoryUsage()
-                            );
-                            worker.postMessage({
-                                breakOnFailure: true,
-                                challenge,
-                                src: url,
-                                input,
-                                expected,
                             });
-                        });
 
-                        if (res.pass) {
-                            pass++;
+                            if (res.pass) {
+                                pass++;
+                            }
+                            if (!res.pass) {
+                                failures.push(res);
+                            }
+                            if (!res.pass && type !== "public_tests") {
+                                break;
+                            }
                         }
-                        if (!res.pass) {
-                            failures.push(res);
-                        }
-                        if (!res.pass && type !== "public_tests") {
+
+                        total_results[type] = {
+                            pass,
+                            fail: failures.length,
+                            failures,
+                        };
+                        if (failures.length > 0) {
                             break;
                         }
                     }
-
-                    total_results[type] = {
-                        pass,
-                        fail: failures.length,
-                        failures,
-                    };
-                    if (failures.length > 0) {
-                        break;
-                    }
                 }
+            } catch (e) {
+                if (worker) {
+                    worker.terminate();
+                }
+                total_results = {
+                    error: e.toString(),
+                    stack: e.stack,
+                };
             }
-        } catch (e) {
-            if (worker) {
-                worker.terminate();
-            }
-            total_results = {
-                error: e.toString(),
-                stack: e.stack,
+
+            URL.revokeObjectURL(url);
+            //delete the tmp file
+            await Deno.remove(tmpFile);
+            const tries = trigger.find(this).length + 1;
+
+            console.log("RESULTS", challenge.name, total_results);
+            return {
+                type: "eval_results",
+                name: challenge.name,
+                tries,
+                ...total_results,
             };
-        }
-
-        URL.revokeObjectURL(url);
-        //delete the tmp file
-        await Deno.remove(tmpFile);
-        const tries = trigger.find(this).length + 1;
-
-        return {
-            type: "eval_results",
-            name: challenge.name,
-            tries,
-            ...total_results,
-        };
-    };
+        }, concurrency)
+    );
 
 export const generateReport = () => (trigger) => {
     console.log("generateReport");

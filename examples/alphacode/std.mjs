@@ -1,5 +1,6 @@
 import { map, pipe } from "rxjs";
 import { operableFrom } from "looplib";
+import { Trigger } from "../../../looplib/index.mjs";
 console.log("start");
 export function get(query, hidden = false) {
     return map(function (trigger) {
@@ -65,13 +66,28 @@ function guard(condition, bail$) {
     };
 }
 
-export function retry(count, bail$) {
+export function retry(count, bail$, cond = () => true) {
     return function (trigger) {
         const isRetry = trigger.find(this).length < count;
-        if (isRetry) {
+        if (isRetry && cond(trigger)) {
             return { retry: true, hidden: true };
         }
 
         return bail$.next(trigger);
+    };
+}
+
+export function retryTo(count, to$, cond = () => true) {
+    return async function (trigger) {
+        console.log("RETRY TO", count);
+        const isRetry = trigger.find(this).length < count;
+        const res = await cond(trigger);
+        if (res && isRetry) {
+            return to$.next(
+                new Trigger({ retry: true, hidden: true }, this, trigger)
+            );
+        }
+
+        return { hidden: true };
     };
 }
