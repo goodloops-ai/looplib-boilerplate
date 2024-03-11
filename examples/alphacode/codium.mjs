@@ -251,10 +251,13 @@ export const testSolution1 = ({
     timestamp = new Date().toISOString(),
     nonce = Math.floor(Math.random() * 1000),
     concurrency = 1,
+    serial = true,
 }) =>
     pipe(
         mergeMap(async function (trigger) {
-            !!trigger.previous; // touch the previous value to ensure this goes in serial
+            if (serial) {
+                !!trigger.previous; // touch the previous value to ensure this goes in serial
+            }
             const valids = await getChallenges({ includePrivate: true })();
             const __challenge = trigger.findOne(_challenge);
             const challenge = valids.find((c) => c.index === __challenge.index);
