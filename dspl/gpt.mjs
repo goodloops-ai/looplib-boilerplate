@@ -69,17 +69,14 @@ export const schema = base
                 ),
             model: z
                 .string()
-                .default("gpt-3.5-turbo")
                 .optional()
                 .describe('The model to use. Defaults to "gpt-3.5-turbo"'),
             temperature: z
                 .number()
-                .default(0.3)
                 .optional()
                 .describe("The temperature to use. Defaults to 0.3"),
             max_tokens: z
                 .number()
-                .default(4000)
                 .optional()
                 .describe(
                     "The maximum number of tokens to generate. Defaults to 4000"
@@ -88,6 +85,7 @@ export const schema = base
                 .object({
                     type: z.literal("json_object"),
                 })
+                .or(z.undefined())
                 .optional()
                 .describe("The response format to use. Defaults to undefined"),
             onContent: z

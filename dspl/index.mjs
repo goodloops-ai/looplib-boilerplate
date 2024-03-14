@@ -1,7 +1,7 @@
 import { load } from "https://deno.land/std@0.214.0/dotenv/mod.ts";
 import { env as setEnv } from "./env.mjs";
 import { of, tap } from "rxjs";
-import { codegen } from "./codegen.mjs";
+import codegen from "./codegen2.mjs";
 import { start } from "./env.mjs";
 import { testSolution1 } from "../examples/alphacode/codium.mjs";
 import * as gpt from "./gpt.mjs";

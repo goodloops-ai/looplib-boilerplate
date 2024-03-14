@@ -10,7 +10,7 @@ import { tap } from "https://esm.sh/rxjs@7.8.1";
 export function prompt({
     content,
     role = "user",
-    config = {},
+    gptOptions = {},
     invariants = [],
 }) {
     const processInvariants = (context, retryMap = new Map(), index = 0) => {
@@ -71,7 +71,7 @@ export function prompt({
                 if (invariant.recovery === "regenerate") {
                     // Rerun the original gpt() call
                     return of(context).pipe(
-                        gpt(config),
+                        gpt(gptOptions),
                         mergeMap((newContext) => {
                             return processInvariants(newContext, retryMap);
                         })
@@ -80,7 +80,7 @@ export function prompt({
                     // Append the error message and rerun
                     return of(context).pipe(
                         message({ role, content: `Error: ${error.message}` }),
-                        gpt({ role, content: appendedMessage }, config),
+                        gpt(gptOptions),
                         mergeMap((newContext) => {
                             return processInvariants(newContext, retryMap);
                         })
@@ -99,7 +99,7 @@ export function prompt({
     // Start the process with an initial gpt call
     return pipe(
         message({ role, content }),
-        gpt(config),
+        gpt(gptOptions),
         mergeMap((context) => processInvariants(context)),
         tap((result) => {
             console.log("prompt result", result);
@@ -117,9 +117,9 @@ export const schema = base
                 .enum(["user", "system"])
                 .default("user")
                 .describe("The role of the message sender."),
-            config: gpt.schema.shape.config
-                .default({})
-                .describe("The configuration object for the GPT call."),
+            gptOptions: gpt.schema.shape.config.describe(
+                "REQUIRED: The configuration object for the GPT call."
+            ),
             invariants: z
                 .array(
                     z.object({

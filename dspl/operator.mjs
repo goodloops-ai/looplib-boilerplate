@@ -1,11 +1,16 @@
-import { mergeMap, map, pipe, of } from "https://esm.sh/rxjs@7.8.1";
+import {
+    mergeMap,
+    map,
+    pipe,
+    of,
+    firstValueFrom,
+} from "https://esm.sh/rxjs@7.8.1";
 import { z } from "zod";
 import Mustache from "mustache";
 import { zodToJsonSchema } from "https://esm.sh/zod-to-json-schema@3.22.3";
 import { fromZodError } from "zod-validation-error";
 
 export function wrap({ operator, schema }) {
-    console.log("wrap", schema);
     const factory = function (config, { input = {}, output = {} } = {}) {
         const op = pipe(
             mergeMap(({ blackboard = {}, messages, env }) => {
@@ -32,14 +37,13 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
                     }
                 };
 
-                console.log("wrap", blackboard, schema.shape.config);
-                const wrappedBlackboard = Object.entries(blackboard).reduce(
-                    (acc, [key, value]) => {
-                        acc[key] = wrapValueWithTemplate(key, value);
-                        return acc;
-                    },
-                    {}
-                );
+                const wrappedBlackboard = Object.entries({
+                    ...blackboard,
+                    ...config,
+                }).reduce((acc, [key, value]) => {
+                    acc[key] = wrapValueWithTemplate(key, value);
+                    return acc;
+                }, {});
 
                 messages = messages.map((message) => {
                     message.content = Mustache.render(
@@ -97,6 +101,7 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
                 }
 
                 // HERE IS WHERE YOU CAN DO BLACKBOARD SCOPING
+                console.log("wrap", blackboard, operator);
                 return of({ blackboard, messages, input, env }).pipe(
                     operator(config, env),
                     map(
@@ -185,15 +190,21 @@ function addExtras(opOrFactory, schema, type) {
         const input =
             type === "operator" ? inputOrConfigAndIO : inputOrConfigAndIO.input;
 
+        console.log("start", inputOrConfigAndIO, blackboard, type);
         return of({ input, messages, blackboard, env }).pipe(
             type === "operator"
                 ? opOrFactory
                 : opOrFactory(inputOrConfigAndIO.config, {
-                      input: inputOrConfigAndIO.input,
-                      output: inputOrConfigAndIO.output,
+                      input: inputOrConfigAndIO.input || {},
+                      output: inputOrConfigAndIO.output || {},
                   })
         );
     };
+
+    opOrFactory.execute = (inputOrConfigAndIO, { blackboard, messages, env }) =>
+        firstValueFrom(
+            opOrFactory.start(inputOrConfigAndIO, { blackboard, messages, env })
+        );
 
     opOrFactory._name = opOrFactory.schema.description.split(":")[0].trim();
     opOrFactory.description = opOrFactory.schema.description
@@ -207,8 +218,8 @@ function addExtras(opOrFactory, schema, type) {
 
 export const schema = z
     .object({
-        input: z.object({}).default({}).describe("Extend with input schema"),
-        output: z.object({}).default({}).describe("Extend with output schema"),
-        config: z.object({}).default({}).describe("Extend with config schema"),
+        input: z.object({}).default({}).describe("NA"),
+        output: z.object({}).default({}).describe("NA"),
+        config: z.object({}).default({}).describe("NA"),
     })
     .describe("Override this description with [name]: description");
