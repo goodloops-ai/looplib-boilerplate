@@ -139,20 +139,23 @@ export const schema = base.extend({
         }),
         message(description),
         prompt({
-            content: `We will now generate a flow based on the provided pseudocode.
-            First, create your imports. You will need to import any operators you use in the flow. 
-You should start my defining the schema for how the flow will be configured, and then implement the operator that will generate the flow.
+            content: `We will now generate a flow or operator based on the provided pseudocode.
+if the provided description is an operator, you should generate the operator.
+if the provided description is a flow, you should generate the flow.
+First, create your imports. If you need to import any operators, you should do so here. 
+You should start my defining the schema for how the flow or operator will be configured, and then implement the operator that will generate the flow.
 You may respond with partial code blocks while you work on those steps, but they must NOT have labels. The final code block must be the complete ECMAScript module with the schema, operator, and default exports.
 Ensure that all operators you use in the flow are given all required configuration
-Ensure that the user is able to override the model string and temperature in the configuration, but you must provide sensible defaults for each prompt call.
+Ensure that the user is able to override the model string and temperature in the configuration if any prompts are made, but you must provide sensible defaults for each prompt call.
+If the psuedocode makes reference to an operator that does not exist, you should act as if the operator exists and use it as you would any other operator, providing it with the configuration and IO map as you would any other operator.
 Ensure that your provided schema is complete and accurate.`,
             gptOptions,
             invariants: [
                 {
-                    filter: /```(?:javascript|js)?\n([\s\S]*?)\n```/,
+                    type: "parse",
+                    parse: /```(?:javascript|js)?\n([\s\S]*?)\n```/,
                     output: `flow`,
                     maxRetries: 6,
-                    recovery: "regenerate",
                 },
             ],
         }),

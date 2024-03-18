@@ -9,6 +9,7 @@ import { z } from "zod";
 import Mustache from "mustache";
 import { zodToJsonSchema } from "https://esm.sh/zod-to-json-schema@3.22.3";
 import { fromZodError } from "zod-validation-error";
+import _ from "lodash";
 
 export function wrap({ operator, schema }) {
     const factory = function (config, { input = {}, output = {} } = {}) {
@@ -46,10 +47,12 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
                 }, {});
 
                 messages = messages.map((message) => {
-                    message.content = Mustache.render(
-                        message.content,
-                        wrappedBlackboard
-                    );
+                    if (!message.content.startsWith("#NOMUSTACHE")) {
+                        message.content = Mustache.render(
+                            message.content,
+                            wrappedBlackboard
+                        );
+                    }
                     return message;
                 });
 
@@ -72,7 +75,10 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
                             renderedObj[key] = recursiveRender(value);
                         }
                         return renderedObj;
-                    } else if (typeof obj === "string") {
+                    } else if (
+                        typeof obj === "string" &&
+                        !obj.startsWith("#NOMUSTACHE")
+                    ) {
                         return Mustache.render(obj, { blackboard, env });
                     }
                     return obj;
@@ -80,9 +86,10 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
 
                 try {
                     config = schema.shape.config
-                        .transform((config) => recursiveRender(config))
+                        // .transform((config) => recursiveRender(config))
                         .parse(config);
                 } catch (e) {
+                    console.log(e);
                     const err = fromZodError(e);
                     err.message += schema.shape.config.description;
                     console.error(err);
@@ -91,7 +98,7 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
 
                 try {
                     input = schema.shape.input
-                        .transform((input) => recursiveRender(input))
+                        // .transform((input) => recursiveRender(input))
                         .parse(input);
                 } catch (e) {
                     const err = fromZodError(e);
@@ -126,17 +133,22 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
                             );
                             const recursiveAssignOutput = (
                                 outputMap,
-                                outputValues
+                                outputValues,
+                                basePath = ""
                             ) => {
                                 Object.entries(outputMap).forEach(
                                     ([key, valuePath]) => {
+                                        const fullPath = basePath
+                                            ? `${basePath}.${key}`
+                                            : key;
                                         if (
                                             typeof valuePath === "object" &&
                                             valuePath !== null
                                         ) {
                                             return recursiveAssignOutput(
                                                 valuePath,
-                                                outputValues
+                                                outputValues,
+                                                fullPath
                                             );
                                         }
 
@@ -146,17 +158,7 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
                                                 (acc, key) => acc[key],
                                                 outputValues
                                             );
-                                        const pathParts = key.split(".");
-                                        const lastKey = pathParts.pop();
-                                        const targetObject = pathParts.reduce(
-                                            (acc, key) => {
-                                                if (!(key in acc))
-                                                    acc[key] = {};
-                                                return acc[key];
-                                            },
-                                            blackboard
-                                        );
-                                        targetObject[lastKey] = value;
+                                        _.set(blackboard, fullPath, value);
                                     }
                                 );
                             };

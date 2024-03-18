@@ -1,6 +1,6 @@
 import { catchError, throwError, of, mergeMap, pipe, filter } from "rxjs";
 import gpt from "./gpt.mjs"; // Assuming gpt is an operator
-import checkInvariant from "./invariant.mjs";
+import checkInvariant, { schema as invariantSchema } from "./invariant.mjs";
 import message, { messageSchema } from "./message.mjs";
 import { wrap, schema as base } from "./operator.mjs";
 import { z } from "zod";
@@ -34,10 +34,15 @@ export function prompt({
             }, "value");
         };
 
+        const getFromBlackboard = (key) => {
+            console.log("getFromBlackboard", key, context.blackboard);
+            return _.get(context.blackboard, key);
+        };
+
         return of(context).pipe(
             checkInvariant(invariant, {
                 input: {
-                    value: `{{${invariant.input}}}`,
+                    value: invariant.inputs?.map(getFromBlackboard),
                 },
                 output: makeOutputSkeleton(invariant.output),
             }),
@@ -53,13 +58,15 @@ export function prompt({
             ),
 
             catchError((error) => {
+                console.log("checkInvariant error", error, invariant, retryMap);
+                Deno.exit(1);
                 if (retryMap.has(invariant)) {
                     const count = retryMap.get(invariant);
                     if (count >= invariant.maxRetries) {
                         return throwError(
                             () =>
                                 new Error(
-                                    `Exceeded max retries for invariant: ${invariant.filter}`
+                                    `Exceeded max retries for invariant: ${invariant}`
                                 )
                         );
                     }
@@ -68,29 +75,27 @@ export function prompt({
                     retryMap.set(invariant, 1);
                 }
 
-                if (invariant.recovery === "regenerate") {
-                    // Rerun the original gpt() call
-                    return of(context).pipe(
-                        gpt(gptOptions),
-                        mergeMap((newContext) => {
-                            return processInvariants(newContext, retryMap);
-                        })
-                    );
-                } else if (invariant.recovery === "append") {
+                if (invariant.recovery_prompt) {
                     // Append the error message and rerun
                     return of(context).pipe(
-                        message({ role, content: `Error: ${error.message}` }),
+                        message({
+                            role,
+                            content: Mustache.render(
+                                invariant.recovery_prompt,
+                                context.blackboard
+                            ),
+                        }),
                         gpt(gptOptions),
                         mergeMap((newContext) => {
                             return processInvariants(newContext, retryMap);
                         })
                     );
                 } else {
-                    return throwError(
-                        () =>
-                            new Error(
-                                `Unknown recovery strategy: ${invariant.recovery}`
-                            )
+                    return of(context).pipe(
+                        gpt(gptOptions),
+                        mergeMap((newContext) => {
+                            return processInvariants(newContext, retryMap);
+                        })
                     );
                 }
             })
@@ -122,27 +127,27 @@ export const schema = base
             ),
             invariants: z
                 .array(
-                    z.object({
-                        filter: z
-                            .union([z.instanceof(RegExp)])
-                            .describe(
-                                "The pattern to identify the relevant part of the message."
-                            ),
-                        output: z
-                            .string()
-                            .describe(
-                                "The key under which to store the first matching group content."
-                            ),
+                    invariantSchema.shape.config.extend({
                         maxRetries: z
                             .number()
                             .int()
                             .nonnegative()
+                            .default(3)
                             .describe("The maximum number of retries allowed."),
-                        recovery: z
-                            .enum(["regenerate", "append"])
+                        recovery_prompt: z
+                            .string()
+                            .optional()
                             .describe(
-                                "The strategy to use if the invariant check fails. regenerate will re-issue the same request. append will append the original response and error message to the content and re-issue the request."
+                                `The prompt to use for the recovery strategy. If not provided, the original request will be rerun. If provided, the last assistant message and the recovery prompt will be sent to the assistant.`
                             ),
+                        output: z
+                            .string()
+                            .optional()
+                            .describe("The blockboard output path."),
+                        inputs: z
+                            .array(z.string())
+                            .optional()
+                            .describe("The blockboard input paths."),
                     })
                 )
                 .default([])
