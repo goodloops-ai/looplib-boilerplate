@@ -59,7 +59,6 @@ export function prompt({
 
             catchError((error) => {
                 console.log("checkInvariant error", error, invariant, retryMap);
-                Deno.exit(1);
                 if (retryMap.has(invariant)) {
                     const count = retryMap.get(invariant);
                     if (count >= invariant.maxRetries) {

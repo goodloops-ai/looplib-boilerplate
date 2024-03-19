@@ -122,7 +122,8 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
                                 ..._env,
                             };
 
-                            _output = schema.shape.output.parse(_output);
+                            console.log("wrap output", operator, _output);
+                            _output = schema.shape.output.parse(_output || {});
 
                             messages = _messages || messages;
 

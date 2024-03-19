@@ -1,0 +1,4 @@
+#operator: a simple building block of a computation given a provided function
+computation = [
+    return fn(input: {}) : {}
+]
