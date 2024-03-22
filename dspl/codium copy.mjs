@@ -8,38 +8,12 @@ const codegenSchema = z.object({
     challenge: z.object({
         description: z.string(),
         name: z.string(),
-        public_tests: z.array(
-            z.object({
-                input: z.array(z.string()),
-                output: z.array(z.string()),
-            })
-        ), // Simplified for example purposes
+        public_tests: z.array(z.any()), // Simplified for example purposes
     }),
-    runTests: z
-        .function()
-        .args(
-            z.string().describe("code string"),
-            z.array(
-                z.object({
-                    input: z.array(z.string()).describe("input strings"),
-                    output: z
-                        .array(z.string())
-                        .describe("expected output strings"),
-                })
-            )
-        )
-        .returns(
-            z.promise(
-                z.object({
-                    status: z.enum(["pass", "fail", "error"]),
-                    message: z.string(),
-                    error: z.string().optional(),
-                })
-            )
-        ),
+    runTest: z.function().args(z.any(), z.any()).returns(z.any()),
 });
 
-const operator = ({ challenge, runTests }) =>
+const operator = ({ challenge, runTest }) =>
     pipe(
         message({
             role: "system",
@@ -87,29 +61,25 @@ const operator = ({ challenge, runTests }) =>
                 {
                     type: "compute",
                     inputs: [`${challenge.name}.code`],
-                    compute: ([code]) => runTests(code, challenge.public_tests),
+                    compute: ([code]) =>
+                        Promise.all(
+                            challenge.public_tests.map((test) =>
+                                runTest(code, test)
+                            )
+                        ),
                     output: `${challenge.name}.publicTestResults`,
                 },
                 {
                     type: "filter",
-                    filter: ([testResults]) => {
-                        const res = testResults.every(
-                            (result) => result.status === "pass"
-                        );
-                        if (!res) {
-                            throw new Error(
-                                "Code did not pass all public tests"
-                            );
-                        }
-                        return res;
-                    },
+                    filter: ([testResults]) =>
+                        testResults.every((result) => result.status === "pass"),
                     inputs: [`${challenge.name}.publicTestResults`],
                     description: "The code must pass the public tests",
                     recovery_prompt: `
             Here are the results of testing your code:
             {{#each ${challenge.name}.publicTestResults}}
                 - Test Result: {{@index}} - 
-                {{#if (eq this.status "pass")}}
+                {{#if this.status}}
                 Success: {{this.message}}. Congratulations, no errors detected!
                 {{else if (eq this.error "SyntaxError")}}
                 Syntax Error Detected: {{this.message}}. Please check your syntax.
@@ -123,7 +93,6 @@ const operator = ({ challenge, runTests }) =>
                 Unknown Error: {{this.message}}. Review the code for potential issues.
                 {{/if}}
             {{/each}}
-            Provide a new code block with the updated code to fix all errors.
             `,
                     maxRetries: 6,
                     output: `${challenge.name}.public_tests`,

@@ -1,0 +1,5 @@
+runchallenges(challenges, runTest) = [
+    for challenge in challenges [
+        codium(challenge, runTest)
+    ]
+]

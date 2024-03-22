@@ -108,7 +108,7 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
                 }
 
                 // HERE IS WHERE YOU CAN DO BLACKBOARD SCOPING
-                console.log("wrap", blackboard, operator);
+                // console.log("wrap", blackboard, operator);
                 return of({ blackboard, messages, input, env }).pipe(
                     operator(config, env),
                     map(
@@ -122,16 +122,16 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
                                 ..._env,
                             };
 
-                            console.log("wrap output", operator, _output);
+                            // console.log("wrap output", operator, _output);
                             _output = schema.shape.output.parse(_output || {});
 
                             messages = _messages || messages;
 
-                            console.log(
-                                "add output to blackboard",
-                                output,
-                                _output
-                            );
+                            // console.log(
+                            //     "add output to blackboard",
+                            //     output,
+                            //     _output
+                            // );
                             const recursiveAssignOutput = (
                                 outputMap,
                                 outputValues,
@@ -193,7 +193,7 @@ function addExtras(opOrFactory, schema, type) {
         const input =
             type === "operator" ? inputOrConfigAndIO : inputOrConfigAndIO.input;
 
-        console.log("start", inputOrConfigAndIO, blackboard, type);
+        // console.log("start", inputOrConfigAndIO, blackboard, type);
         return of({ input, messages, blackboard, env }).pipe(
             type === "operator"
                 ? opOrFactory

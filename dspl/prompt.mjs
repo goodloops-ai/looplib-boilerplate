@@ -1,4 +1,5 @@
 import { catchError, throwError, of, mergeMap, pipe, filter } from "rxjs";
+import Handlebars from "handlebars";
 import gpt from "./gpt.mjs"; // Assuming gpt is an operator
 import checkInvariant, { schema as invariantSchema } from "./invariant.mjs";
 import message, { messageSchema } from "./message.mjs";
@@ -6,7 +7,9 @@ import { wrap, schema as base } from "./operator.mjs";
 import { z } from "zod";
 import _ from "lodash";
 import { tap } from "https://esm.sh/rxjs@7.8.1";
-
+Handlebars.registerHelper("eq", function (arg1, arg2, options) {
+    return arg1 === arg2;
+});
 export function prompt({
     content,
     role = "user",
@@ -20,12 +23,7 @@ export function prompt({
 
         const invariant = invariants[index];
 
-        console.log(
-            "Processing invariant",
-            invariants,
-            invariant.filter,
-            context.messages
-        );
+        console.log("Processing invariant", invariant, context.messages);
 
         const makeOutputSkeleton = (output) => {
             const keys = output.split(".");
@@ -46,9 +44,6 @@ export function prompt({
                 },
                 output: makeOutputSkeleton(invariant.output),
             }),
-            tap((result) => {
-                console.log("checkInvariant result", result);
-            }),
             mergeMap((updatedContext) =>
                 processInvariants(
                     _.merge({}, context, updatedContext),
@@ -56,18 +51,18 @@ export function prompt({
                     index + 1
                 )
             ),
-
             catchError((error) => {
-                console.log("checkInvariant error", error, invariant, retryMap);
+                console.log(
+                    "checkInvariant error",
+                    error,
+                    invariant,
+                    JSON.stringify(context, null, 2)
+                );
                 if (retryMap.has(invariant)) {
                     const count = retryMap.get(invariant);
                     if (count >= invariant.maxRetries) {
-                        return throwError(
-                            () =>
-                                new Error(
-                                    `Exceeded max retries for invariant: ${invariant}`
-                                )
-                        );
+                        console.error(invariant);
+                        return of(context);
                     }
                     retryMap.set(invariant, count + 1);
                 } else {
@@ -76,23 +71,52 @@ export function prompt({
 
                 if (invariant.recovery_prompt) {
                     // Append the error message and rerun
+                    let content;
+                    try {
+                        content = Handlebars.compile(invariant.recovery_prompt)(
+                            context.blackboard
+                        );
+                    } catch (e) {
+                        console.error(e);
+                        Deno.exit(1);
+                    }
+                    console.log(
+                        "recovery_prompt",
+                        invariant.recovery_prompt,
+                        context.messages,
+                        content
+                    );
+                    // Deno.exit(1);
                     return of(context).pipe(
                         message({
                             role,
-                            content: Mustache.render(
-                                invariant.recovery_prompt,
-                                context.blackboard
-                            ),
+                            content,
                         }),
                         gpt(gptOptions),
-                        mergeMap((newContext) => {
-                            return processInvariants(newContext, retryMap);
+                        mergeMap((updatedContext) => {
+                            console.log(
+                                "POST RECOVERY",
+                                updatedContext.messages.slice(-1).content
+                            );
+                            // Deno.exit(1);
+                            return processInvariants(
+                                _.merge({}, context, updatedContext),
+                                retryMap,
+                                index + 1
+                            );
                         })
                     );
                 } else {
-                    return of(context).pipe(
+                    return of({
+                        ...context,
+                        messages: context.messages,
+                    }).pipe(
                         gpt(gptOptions),
                         mergeMap((newContext) => {
+                            console.log(
+                                "POST RETRY",
+                                newContext.messages.slice(-1)[0].content
+                            );
                             return processInvariants(newContext, retryMap);
                         })
                     );

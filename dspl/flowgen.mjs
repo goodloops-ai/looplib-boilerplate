@@ -1,5 +1,6 @@
 import message from "./message.mjs";
 import prompt from "./prompt.mjs";
+import codeium from "./codium.mjs";
 import { pipe } from "rxjs";
 import { z } from "zod";
 import { wrap, schema as base } from "./operator.mjs";
@@ -18,6 +19,7 @@ Notes about the DSL:
 
 Notes about DSL operators:
 - each operator is a factory function that returns an rxjs operator.
+- each returned operator is expected to reside in the middle of a pipeline, i.e. of(input).pipe(operator(config, iomap))
 - the factory function takes two arguments: the config and the IO map.
 - the config is an object that contains the configuration for the operator.
 - the IO map is an object that contains mappings for the input and output of the to and from a shared blackboard.
@@ -39,9 +41,15 @@ ${JSON.stringify(message.properties, null, 4)}
 \`\`\`schema
 ${JSON.stringify(prompt.properties, null, 4)}
 \`\`\`
+- codium: prompt an AI for a code solution.
+- import codium from "./codium.mjs";
+\`\`\`schema
+${JSON.stringify(codeium.properties, null, 4)}
+\`\`\`
 
 When building the flow, it should be in the form of a new rxjs operator:
 - the operator should take a single config object as an argument (don't include the IO map, it is handled by the DSL).
+- all operators are expected to reside in the middle of a pipeline: pipe(..., operator(config), ...)
 - the operator should expect as input a single object with the following properties:
     - input: an object containing input variables matching the operators provided input schema
     - messages: an array of message objects.
@@ -172,7 +180,8 @@ Ensure that your provided schema is complete and accurate.`,
             gptOptions,
             invariants: [
                 {
-                    filter: /```(?:javascript|js)?\n([\s\S]*?)\n```/,
+                    type: "parse",
+                    parse: /```(?:javascript|js)?\n([\s\S]*?)\n```/,
                     output: `example`,
                     maxRetries: 6,
                     recovery: "regenerate",
