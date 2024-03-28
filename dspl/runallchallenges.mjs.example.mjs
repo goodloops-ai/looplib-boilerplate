@@ -15,7 +15,7 @@ const env = {
 
 const challenges = JSON.parse(
     Deno.readTextFileSync("./dspl/challenges.json")
-).slice(0, 1);
+).slice(0, 10);
 
 // const challenges = [
 //     {

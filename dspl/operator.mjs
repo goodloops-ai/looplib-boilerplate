@@ -89,10 +89,11 @@ ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}
                         // .transform((config) => recursiveRender(config))
                         .parse(config);
                 } catch (e) {
-                    console.log(e);
+                    console.log(config, schema.shape.config);
+                    Deno.exit();
                     const err = fromZodError(e);
                     err.message += schema.shape.config.description;
-                    console.error(err);
+                    // console.error(err);
                     throw err;
                 }
 

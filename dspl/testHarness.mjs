@@ -1,6 +1,14 @@
 import filenamify from "filenamify";
 
-export const runTests = async ({ code, tests, challenge }) => {
+const timestamp = new Date().getTime();
+const nonce = Math.floor(Math.random() * 1000000);
+
+export const runTests = async (
+    code,
+    tests,
+    { breakOnFailure = false } = {}
+) => {
+    // console.log("RUNNING TESTS", code, tests, breakOnFailure);
     const preamble = `(function() {
     // Save a reference to the original Array constructor
     const OriginalArray = Array;
@@ -40,24 +48,16 @@ export const runTests = async ({ code, tests, challenge }) => {
     const blob = new Blob([preamble, code], {
         type: "application/javascript",
     });
-    // write the blob to a tmp file in the current directory named after the challenge name
-    const tmpFile = filenamify(
-        `./testing-${challenge.name}.${timestamp}.${nonce}.js`
-    );
 
-    try {
-        await Deno.writeFile(tmpFile, new Uint8Array(await blob.arrayBuffer()));
-    } catch (e) {}
     const url = URL.createObjectURL(blob);
     let total_results = [];
     let worker;
 
-    console.log("RUNNING TESTS", challenge.name, challenge.index);
     try {
         for (const test of tests) {
             const { input, output: expected } = test;
             worker = new Worker(
-                import.meta.resolve("@local/dspl/testworker.single.mjs"),
+                import.meta.resolve("./testworker.single.mjs"),
                 {
                     type: "module",
                 }
@@ -92,15 +92,9 @@ export const runTests = async ({ code, tests, challenge }) => {
                     });
                     worker.terminate();
                 };
-                console.log(
-                    "DISPATCH TEST",
-                    !!code,
-                    challenge.index,
-                    challenge.name
-                );
+                // console.log("POSTING MESSAGE", input, expected, url);
                 worker.postMessage({
                     breakOnFailure: true,
-                    challenge,
                     src: url,
                     input,
                     expected,
@@ -108,6 +102,10 @@ export const runTests = async ({ code, tests, challenge }) => {
             });
 
             total_results.push(res);
+
+            if (breakOnFailure && res.status !== "pass") {
+                break;
+            }
         }
     } catch (e) {
         if (worker) {
@@ -124,9 +122,7 @@ export const runTests = async ({ code, tests, challenge }) => {
     }
 
     URL.revokeObjectURL(url);
-    //delete the tmp file
-    await Deno.remove(tmpFile);
 
-    console.log("RESULTS", challenge.name, total_results);
+    // console.log("RESULTS", total_results);
     return total_results;
 };

@@ -3,6 +3,8 @@ import { z } from "zod";
 import { wrap, schema as base } from "./operator.mjs";
 import message from "./message.mjs";
 import prompt from "./prompt.mjs";
+import blackboardInit from "./blackboard-init.mjs";
+import imports from "./imports.mjs";
 
 const codegenSchema = z.object({
     challenge: z.object({
@@ -41,6 +43,20 @@ const codegenSchema = z.object({
 
 const operator = ({ challenge, runTests }) =>
     pipe(
+        imports({
+            $: {
+                runTests: "./testHarness.mjs",
+            },
+        }),
+        blackboardInit({
+            $: {
+                [challenge.name]: challenge,
+                prompt: {
+                    model: "gpt-4-0125-preview",
+                    temperature: 0.3,
+                },
+            },
+        }),
         message({
             role: "system",
             content:
@@ -72,38 +88,20 @@ const operator = ({ challenge, runTests }) =>
         prompt({
             role: "user",
             content: "Please generate the solution code.",
-            gptOptions: {
-                model: "gpt-3.5-turbo",
-                temperature: 0.7,
-                OPENAI_API_KEY: "", // Assume the environment variable is set
-            },
             invariants: [
                 {
                     type: "parse",
-                    parse: /\`\`\`(?:javascript|js)?\n([\s\S]*?)\n\`\`\`/,
-                    output: `${challenge.name}.code`,
+                    parse: `$["${challenge.name}"].code = /\`\`\`(?:javascript|js)?\\n([\\s\\S]*?)\\n\`\`\`/.exec(response)[1]`,
                     maxRetries: 3,
                 },
                 {
                     type: "compute",
-                    inputs: [`${challenge.name}.code`],
-                    compute: ([code]) => runTests(code, challenge.public_tests),
-                    output: `${challenge.name}.publicTestResults`,
+                    compute: `$["${challenge.name}"].publicTestResults = await $.runTests($["${challenge.name}"].code, $["${challenge.name}"].public_tests)`,
+                    maxRetries: 6,
                 },
                 {
                     type: "filter",
-                    filter: ([testResults]) => {
-                        const res = testResults.every(
-                            (result) => result.status === "pass"
-                        );
-                        if (!res) {
-                            throw new Error(
-                                "Code did not pass all public tests"
-                            );
-                        }
-                        return res;
-                    },
-                    inputs: [`${challenge.name}.publicTestResults`],
+                    filter: `_.every($["${challenge.name}"].publicTestResults, { status: "pass" })`,
                     description: "The code must pass the public tests",
                     recovery_prompt: `
             Here are the results of testing your code:
@@ -126,7 +124,6 @@ const operator = ({ challenge, runTests }) =>
             Provide a new code block with the updated code to fix all errors.
             `,
                     maxRetries: 6,
-                    output: `${challenge.name}.public_tests`,
                 },
             ],
         })
