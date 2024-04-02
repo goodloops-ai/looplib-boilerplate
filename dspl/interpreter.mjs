@@ -153,8 +153,8 @@ const dsplCode = `{
       "guards": [
         {
           "type": "llm",
-          "filter": "Is this a good Haiku?",
-          "recovery_prompt": "Try writing the Haiku again",
+          "filter": "Is the haiku a 10/10?",
+          "recovery_prompt": "Improve the Haiku",
           "retries": 3
         }
       ]
