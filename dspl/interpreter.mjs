@@ -2,6 +2,22 @@ import _ from "https://esm.sh/lodash";
 import { OpenAI } from "https://esm.sh/openai";
 import { load } from "https://deno.land/std@0.214.0/dotenv/mod.ts";
 import { mem } from "./mem.mjs";
+import { ensureDir } from "https://deno.land/std/fs/mod.ts";
+import { dirname } from "https://deno.land/std/path/mod.ts";
+import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
+import epub from "https://deno.land/x/epubgen/mod.ts";
+import xmlserializer from "https://esm.sh/xmlserializer";
+
+globalThis.XMLSerializer = function () {
+    return {
+        serializeToString: xmlserializer.serializeToString,
+    };
+};
+
+globalThis.DOMParser = DOMParser;
+
+// import EpubGenerator from "https://esm.sh/epub-gen";
+import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
 import Handlebars from "https://esm.sh/handlebars";
 Handlebars.registerHelper("eq", function (arg1, arg2, options) {
     return arg1 === arg2;
@@ -11,45 +27,88 @@ await load({ export: true });
 const llm = async (history, config, file) => {
     const {
         apiKey,
-        model,
+        model: _model,
         temperature,
-        max_tokens,
+        max_tokens = 500,
         response_format,
         n = 1,
     } = config;
 
-    const messages = history
-        .filter((item) => !Array.isArray(item))
-        .filter((item) => item.meta?.hidden !== true)
-        .map(({ role, content }) => ({ role, content }));
+    const model = response_format ? "gpt-4-0125-preview" : _model;
+    if (model.startsWith("claude")) {
+        let systemMessage = "";
+        const userMessages = history
+            .filter((item) => !Array.isArray(item))
+            .filter((item) => item.meta?.hidden !== true)
+            .map(({ role, content }) => {
+                if (role === "system") {
+                    systemMessage += content + "\n";
+                    return null;
+                }
+                return { role, content };
+            })
+            .filter(Boolean);
 
-    const openai = new OpenAI({
-        dangerouslyAllowBrowser: true,
-        apiKey: Deno.env.get("OPENAI_API_KEY"),
-    });
-
-    try {
-        console.log("Messages:", messages);
-        const response = await openai.chat.completions.create({
-            model,
-            temperature,
-            max_tokens,
-            response_format,
-            messages,
-            n,
+        const anthropic = new Anthropic({
+            apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
         });
 
-        console.log("Response:", response);
-        const assistantMessages = response.choices.map(
-            ({ message }) => message
-        );
+        try {
+            console.log("Messages:", userMessages);
+            const response = await anthropic.messages.create({
+                model,
+                temperature,
+                max_tokens,
+                messages: userMessages,
+                system: systemMessage.trim(),
+            });
 
-        const newHistory = [...history, ...assistantMessages];
-        console.log("New history:", newHistory);
-        return newHistory;
-    } catch (error) {
-        console.error("Error in llm function:", error);
-        return history;
+            console.log("Response:", response);
+            const assistantMessages = [
+                { role: "assistant", content: response.content[0].text },
+            ];
+
+            const newHistory = [...history, ...assistantMessages];
+            console.log("New history:", JSON.stringify(newHistory, null, 2));
+            return newHistory;
+        } catch (error) {
+            console.error("Error in llm function:", error);
+            return history;
+        }
+    } else {
+        const messages = history
+            .filter((item) => !Array.isArray(item))
+            .filter((item) => item.meta?.hidden !== true)
+            .map(({ role, content }) => ({ role, content }));
+
+        const openai = new OpenAI({
+            dangerouslyAllowBrowser: true,
+            apiKey: Deno.env.get("OPENAI_API_KEY"),
+        });
+
+        try {
+            console.log("Messages:", messages);
+            const response = await openai.chat.completions.create({
+                model,
+                temperature,
+                max_tokens,
+                response_format,
+                messages,
+                n,
+            });
+
+            console.log("Response:", response);
+            const assistantMessages = response.choices.map(
+                ({ message }) => message
+            );
+
+            const newHistory = [...history, ...assistantMessages];
+            console.log("New history:", newHistory);
+            return newHistory;
+        } catch (error) {
+            console.error("Error in llm function:", error);
+            return history;
+        }
     }
 };
 
@@ -90,27 +149,133 @@ const elementModules = {
             return context;
         },
     },
-    set: {
-        async execute(variableName, context) {
-            const value = context.history.slice(-1).pop().content.trim();
-            context.blackboard[variableName] = value;
+    image: {
+        async execute(elementData, context) {
+            const {
+                prompt,
+                outputFormat = "webp",
+                imagePath = "./generated_image.png",
+                ...requestBody
+            } = elementData;
+
+            try {
+                const formData = new FormData();
+                formData.append("prompt", prompt);
+                formData.append("output_format", outputFormat);
+
+                for (const [key, value] of Object.entries(requestBody)) {
+                    formData.append(key, value.toString());
+                }
+
+                const response = await fetch(
+                    "https://api.stability.ai/v2beta/stable-image/generate/core",
+                    {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Bearer ${Deno.env.get(
+                                "STABILITY_API_KEY"
+                            )}`,
+                            Accept: "image/*",
+                        },
+                        body: formData,
+                    }
+                );
+
+                if (response.ok) {
+                    const buffer = await response.arrayBuffer();
+                    await ensureDir(dirname(imagePath));
+                    await Deno.writeFile(imagePath, new Uint8Array(buffer));
+                    console.log(
+                        `Image generated successfully. Saved to ${imagePath}`
+                    );
+                } else {
+                    const errorText = await response.text();
+                    throw new Error(`${response.status}: ${errorText}`);
+                }
+            } catch (error) {
+                console.error("Error generating image:", error);
+            }
+
+            return context;
+        },
+    },
+    epub: {
+        async execute(elementData, context) {
+            const {
+                title,
+                author,
+                language,
+                identifier,
+                cover,
+                chapters,
+                epubPath,
+            } = elementData;
+
+            const coverFile = await Deno.readFile(cover);
+            const coverBlob = new Blob([coverFile.buffer]);
+            const coverUrl = URL.createObjectURL(coverBlob);
+
+            const options = {
+                title,
+                author,
+                lang: language,
+                identifier,
+                cover: coverUrl,
+                appendChapterTitles: false,
+                css: `
+          @namespace epub "http://www.idpf.org/2007/ops";
+          body {
+            font-family: Cambria, Liberation Serif, serif;
+          }
+          h1 {
+            text-align: left;
+            text-transform: uppercase;
+            font-weight: 200;
+          }
+        `,
+            };
+
+            try {
+                const epubData = await epub(options, chapters);
+                await Deno.writeFile(epubPath, epubData);
+
+                console.log("EPUB file generated successfully!");
+            } catch (error) {
+                console.error("Error generating EPUB file:", error, chapters);
+            }
+
             return context;
         },
     },
     for: {
         async execute(loopData, context, config) {
-            const { each, in: arrayName, do: loopElements } = loopData;
+            const {
+                each,
+                in: arrayName,
+                do: loopElements,
+                history = "parallel",
+            } = loopData;
             const array = await context.blackboard[arrayName];
 
             const processedArray = await makeList(array, context, config);
             context.blackboard[arrayName] = processedArray;
 
+            let lastContext = context;
+
             for (const item of processedArray) {
                 item.$ = context.blackboard.$;
                 let loopContext = {
-                    history: JSON.parse(JSON.stringify(context.history)),
+                    history: JSON.parse(JSON.stringify(lastContext.history)),
                     blackboard: item,
                 };
+
+                console.log(
+                    "Loop item:",
+                    item,
+                    loopContext,
+                    loopElements,
+                    processedArray
+                );
 
                 for (const element of loopElements) {
                     loopContext = await executeStep(
@@ -118,6 +283,10 @@ const elementModules = {
                         loopContext,
                         config
                     );
+                }
+
+                if (history === "sequential") {
+                    lastContext = loopContext;
                 }
             }
 
@@ -333,10 +502,68 @@ async function executeStep(
         throw new Error(`Unsupported element type: ${type}`);
     }
 
+    // Resolve blackboard references in element configurations deeply
+    const extractPropertiesFromBlackboard = async (blackboard, template) => {
+        const props = extractPropertiesFromTemplate(template);
+        const resolvedProps = {};
+        for (const prop of props) {
+            resolvedProps[prop] = await blackboard[prop];
+        }
+        resolvedProps.$ = await blackboard.$;
+        return resolvedProps;
+    };
+
+    const resolveBlackboardReferences = async (value, blackboard) => {
+        if (typeof value === "function") {
+            return value(await blackboard._obj);
+        }
+        const reservedKeys = [
+            "overrides",
+            "onSuccess",
+            "onFail",
+            "finally",
+            "do",
+        ];
+        const properties = await extractPropertiesFromBlackboard(
+            blackboard,
+            value
+        );
+
+        if (typeof value === "string") {
+            const template = Handlebars.compile(value);
+            return template(properties);
+        } else if (Array.isArray(value)) {
+            return Promise.all(
+                value.map((item) =>
+                    resolveBlackboardReferences(item, blackboard)
+                )
+            );
+        } else if (value !== null && typeof value === "object") {
+            const resolvedObject = {};
+            for (const [key, val] of Object.entries(value)) {
+                if (!reservedKeys.includes(key)) {
+                    resolvedObject[key] = await resolveBlackboardReferences(
+                        val,
+                        blackboard
+                    );
+                } else {
+                    resolvedObject[key] = val;
+                }
+            }
+            return resolvedObject;
+        } else {
+            return value;
+        }
+    };
+
+    const resolvedElementData = await resolveBlackboardReferences(
+        elementData,
+        context.blackboard
+    );
     const originalHistoryLength = context.history.length;
-    context = await elementModule.execute(elementData, context, {
+    context = await elementModule.execute(resolvedElementData, context, {
         ...config,
-        ...elementData,
+        ...resolvedElementData,
     });
 
     if (parse) {
@@ -485,7 +712,13 @@ const makeList = async (
     file = "./dspl/test/toss.json"
 ) => {
     if (Array.isArray(input)) {
-        return input;
+        const $ = await context.blackboard._obj;
+        return input.map((item) => {
+            return {
+                $,
+                ...item,
+            };
+        });
     }
     const prompt = {
         role: "user",
@@ -512,7 +745,7 @@ Ensure that the response is a valid JSON object, and each item in the array is a
 
     try {
         const parsedResponse = JSON.parse(response);
-        return parsedResponse.data || [];
+        return makeList(parsedResponse.data || [], context, config);
     } catch (error) {
         console.error("Error parsing JSON response:", error);
         return [];
@@ -990,6 +1223,183 @@ const shaiku = {
     ],
 };
 
+const haikuEpubFlow = {
+    elements: [
+        {
+            type: "init",
+            content: {
+                $: {
+                    prompt: {
+                        model: "claude-3-opus-20240229",
+                        temperature: 0.7,
+                    },
+                },
+            },
+        },
+        {
+            type: "prompt",
+            content: "Write a haiku about a beautiful sunset.",
+            set: "haiku",
+            parse: {
+                haiku: (response) => response.trim(),
+            },
+        },
+        {
+            type: "image",
+            prompt: "{{haiku}}",
+            imagePath: "./dspl/test/sunset_haiku.png",
+            width: 512,
+            height: 512,
+            samples: 1,
+            steps: 50,
+        },
+        {
+            type: "epub",
+            title: "Sunset Haiku",
+            author: "AI Poet",
+            language: "en",
+            identifier: "sunset-haiku-1",
+            cover: "./dspl/test/sunset_haiku.png",
+            chapters: [
+                {
+                    title: "Sunset Haiku",
+                    content: "<p>{{haiku}}</p>",
+                },
+            ],
+            epubPath: "./dspl/test/sunset_haiku.epub",
+        },
+    ],
+};
+
+const bookWritingFlow = {
+    elements: [
+        {
+            type: "init",
+            content: {
+                $: {
+                    prompt: {
+                        model: "gpt-4-0125-preview",
+                        temperature: 0.7,
+                        max_tokens: 4000,
+                    },
+                },
+                writingStyle: "In the style of Christopher Hitchens",
+                bookDescription: "The heretics guide to AI safety",
+                numChapters: 5,
+                chapters: "5 object with an index number",
+                bookTitle: "",
+                coverImagePath: "./dspl/test/cover.png",
+                bookFilePath: "./dspl/test/book.txt",
+                epubFilePath: "./dspl/test/book.epub",
+            },
+        },
+        {
+            type: "prompt",
+            content:
+                "Create a detailed plot outline for a {{numChapters}}-chapter book in the {{writingStyle}} style, based on the following description:\n\n{{bookDescription}}\n\nEach chapter should be at least 10 pages long.",
+            set: "plotOutline",
+        },
+        {
+            type: "for",
+            each: "chapter",
+            in: "chapters",
+            do: [
+                {
+                    type: "prompt",
+                    content:
+                        "Write chapter {{index}} of the book, ensuring it follows the plot outline and builds upon the previous chapters (if any).",
+                    max_tokens: 4000,
+                    set: "chapter",
+                    parse: {
+                        chapter: (response) => {
+                            const chapter = response
+                                .replace(/^Here.*:\n/, "")
+                                .trim();
+                            return `<p>${chapter.replace(
+                                /\n/g,
+                                "</p><p>"
+                            )}</p>`;
+                        },
+                    },
+                },
+                {
+                    type: "prompt",
+                    content:
+                        "Chapter Content:\n\n{{chapter}}\n\n--\n\nGenerate a concise and engaging title for this chapter based on its content. Respond with the title only, nothing else.",
+                    set: "chapterTitle",
+                    parse: {
+                        chapterTitle: (response) => response.trim(),
+                    },
+                },
+            ],
+        },
+        {
+            type: "prompt",
+            content:
+                "Here is the plot for the book: {{plotOutline}}\n\n--\n\nRespond with a great title for this book. Only respond with the title, nothing else is allowed.",
+            set: "bookTitle",
+            parse: {
+                bookTitle: (response) => response.trim(),
+            },
+        },
+        {
+            type: "prompt",
+            content:
+                "Plot: {{plotOutline}}\n\n--\n\nDescribe the cover we should create, based on the plot. This should be two sentences long, maximum.",
+            set: "coverPrompt",
+        },
+        {
+            type: "image",
+            prompt: "{{coverPrompt}}",
+            imagePath: "{{coverImagePath}}",
+            width: 512,
+            height: 768,
+            samples: 1,
+            steps: 30,
+        },
+        {
+            type: "epub",
+            title: "{{bookTitle}}",
+            author: "AI",
+            language: "en",
+            identifier: "ai-generated-book-1",
+            cover: "{{coverImagePath}}",
+            chapters: ({ chapters }) =>
+                chapters.map((chapter, index) => ({
+                    title: chapter.chapterTitle,
+                    content: `<p>${chapter.chapter}</p>`,
+                })),
+            epubPath: "{{epubFilePath}}",
+        },
+        {
+            type: "message",
+            role: "assistant",
+            content:
+                "Book generated successfully!\nBook Title: {{bookTitle}}\nBook saved as: {{bookFilePath}}\nEPUB file generated: {{epubFilePath}}",
+        },
+    ],
+};
+
+// Execute the DSPL flow
+executeDSPL(bookWritingFlow)
+    .then((context) => {
+        console.log("Book writing flow executed successfully!");
+    })
+    .catch((error) => {
+        console.error("Error executing book writing flow:", error);
+    });
+// Execute the DSPL flow
+// executeDSPL(haikuEpubFlow)
+//     .then((context) => {
+//         console.log("DSPL flow executed successfully!");
+//         console.log("Generated haiku:", context.blackboard.haiku);
+//         console.log("Generated image: ./sunset_haiku.png");
+//         console.log("Generated EPUB: ./sunset_haiku.epub");
+//     })
+//     .catch((error) => {
+//         console.error("Error executing DSPL flow:", error);
+//     });
+
 // const result = await executeDSPL(poemdspl);
 // console.log(await result.blackboard.animals);
 
@@ -1012,8 +1422,8 @@ const shaiku = {
 // const sgptres = await executeDSPL(smartgpt);
 // console.log(await sgptres.blackboard.aiAnswer);
 
-const shaikures = await executeDSPL(shaiku);
-console.log(await shaikures.blackboard.haiku);
+// const shaikures = await executeDSPL(shaiku);
+// console.log(await shaikures.blackboard.haiku);
 
 /**
  * 
