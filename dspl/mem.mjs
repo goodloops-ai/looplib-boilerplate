@@ -21,6 +21,7 @@ export const importJson = async (pathOrObj, def = {}) => {
             ? JSON.parse(await Deno.readTextFile(pathOrObj))
             : pathOrObj;
 
+    console.log("importJson", obj, def);
     if (Array.isArray(obj)) {
         return obj.map((item) => mem({ ...item, ...def }));
     } else if (typeof obj === "object") {

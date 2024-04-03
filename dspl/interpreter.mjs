@@ -9,7 +9,14 @@ Handlebars.registerHelper("eq", function (arg1, arg2, options) {
 await load({ export: true });
 
 const llm = async (history, config, file) => {
-    const { apiKey, model, temperature, max_tokens, response_format } = config;
+    const {
+        apiKey,
+        model,
+        temperature,
+        max_tokens,
+        response_format,
+        n = 1,
+    } = config;
 
     const messages = history
         .filter((item) => item.meta?.hidden !== true)
@@ -28,11 +35,15 @@ const llm = async (history, config, file) => {
             max_tokens,
             response_format,
             messages,
+            n,
         });
 
         console.log("Response:", response);
-        const assistantMessage = response.choices[0].message;
-        const newHistory = [...history, assistantMessage];
+        const assistantMessages = response.choices.map(
+            ({ message }) => message
+        );
+
+        const newHistory = [...history, ...assistantMessages];
         console.log("New history:", newHistory);
         return newHistory;
     } catch (error) {
@@ -50,7 +61,7 @@ const elementModules = {
         },
     },
     prompt: {
-        async execute({ content }, context) {
+        async execute({ content, ...config }, context) {
             const blackboardProps = extractPropertiesFromTemplate(content);
             const resolvedBlackboard = {};
 
@@ -67,7 +78,7 @@ const elementModules = {
             const processedContent =
                 Handlebars.compile(content)(resolvedBlackboard);
             context.history.push({ role: "user", content: processedContent });
-            context = await this.runLLM(context);
+            context = await this.runLLM(context, config);
             return context;
         },
         async runLLM(context, config = {}) {
@@ -231,7 +242,7 @@ async function executeDSPL(dsplCode) {
 async function executeStep(
     element,
     context,
-    config,
+    config = {},
     retries = element.retries || 0
 ) {
     const { type, parse, set, ...elementData } = element;
@@ -242,7 +253,10 @@ async function executeStep(
     }
 
     const originalHistoryLength = context.history.length;
-    context = await elementModule.execute(elementData, context, config);
+    context = await elementModule.execute(elementData, context, {
+        ...config,
+        ...elementData,
+    });
 
     if (parse) {
         const parsedContent = await extractVariables(
@@ -506,11 +520,6 @@ const singlechallenge = {
                         temperature: 0.3,
                     },
                 },
-                runTests: {
-                    // fix this: bug in mem.js
-                    get: async ({ _ }) =>
-                        import("./testHarness.mjs").then((mod) => mod.runTests),
-                },
                 index: 0,
                 name: "1573_C",
                 description:
@@ -522,8 +531,8 @@ const singlechallenge = {
                     },
                 ],
                 public_test_results: {
-                    get: ({ public_tests, code, runTests }) =>
-                        runTests?.(code, public_tests) || [],
+                    get: ({ public_tests, code }) =>
+                        runTests(code, public_tests) || [],
                 },
                 public_tests_passed: {
                     get: ({ public_test_results }) =>
@@ -590,8 +599,306 @@ const singlechallenge = {
     ],
 };
 
+const codium = {
+    elements: [
+        {
+            type: "import",
+            import: {
+                _: "https://esm.sh/lodash",
+                Formula: "https://esm.sh/",
+                runTests: "./testHarness.mjs",
+                importJson: "./mem.mjs",
+                mem: "./mem.mjs",
+            },
+        },
+        {
+            type: "init",
+            content: {
+                $: {
+                    prompt: {
+                        model: "gpt-3.5-turbo",
+                        temperature: 0.3,
+                    },
+                },
+                challengeFile: "./dspl/challenges.valid.json",
+                challenges: {
+                    get: ({ challengeFile }) =>
+                        importJson(challengeFile, {
+                            public_test_results: {
+                                get: ({ public_tests, code }) =>
+                                    runTests(code, public_tests),
+                            },
+                            public_tests_passed: {
+                                get: ({ public_test_results }) =>
+                                    public_test_results?.length &&
+                                    _.every(public_test_results, [
+                                        "status",
+                                        "pass",
+                                    ]),
+                            },
+                            private_test_results: {
+                                get: ({
+                                    public_tests_passed,
+                                    private_tests,
+                                    code,
+                                }) =>
+                                    public_tests_passed
+                                        ? runTests(code, private_tests, {
+                                              breakOnFailure: true,
+                                          })
+                                        : [],
+                            },
+                            private_tests_passed: {
+                                get: ({ private_test_results }) =>
+                                    private_test_results?.length &&
+                                    _.every(private_test_results, [
+                                        "status",
+                                        "pass",
+                                    ]),
+                            },
+                            generated_test_results: {
+                                get: ({
+                                    public_tests_passed,
+                                    private_tests_passed,
+                                    generated_tests,
+                                    code,
+                                }) =>
+                                    public_tests_passed && private_tests_passed
+                                        ? runTests(code, generated_tests, {
+                                              breakOnFailure: true,
+                                          })
+                                        : [],
+                            },
+                            generated_tests_passed: {
+                                get: ({ generated_test_results }) =>
+                                    generated_test_results?.length &&
+                                    _.every(generated_test_results, [
+                                        "status",
+                                        "pass",
+                                    ]),
+                            },
+                            tests_passed: {
+                                get: ({
+                                    public_tests_passed,
+                                    private_tests_passed,
+                                    generated_tests_passed,
+                                }) => {
+                                    return (
+                                        public_tests_passed &&
+                                        private_tests_passed &&
+                                        generated_tests_passed
+                                    );
+                                },
+                            },
+                        }),
+                },
+            },
+        },
+        {
+            type: "for",
+            each: "challenge",
+            in: "challenges",
+            do: [
+                {
+                    type: "message",
+                    role: "system",
+                    content:
+                        "You are a top-rated code assistant based on a cutting-edge version of GPT, with far greater capabilities than any prior GPT model. You always return code when requested, and always pay the closest attention to instructions and other elements pointed to by the prompt. You never return partial code, never give up, and never refuse to return code.",
+                },
+                {
+                    type: "message",
+                    role: "user",
+                    content: "{{description}}",
+                },
+                {
+                    type: "prompt",
+                    content: `Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.
+               The code:
+               - must be a standalone ECMAScript module with no dependencies.
+               - must have a function as the default export.
+               - must accept a single 'lines' argument (an array of input strings).
+               - must return a single array of output strings.
+               - must not mix BigInt and other types, must always use explicit conversions.
+               - should be commented to indicate which part of the code relates to which problem constraint.
+               - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
+              
+               IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general, avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
+              
+               Consider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.
+              
+               Enclose your code in a markdown code block.`,
+                    parse: {
+                        code: (response) => {
+                            const match = response.match(
+                                /```(?:javascript|)?\s*\n([\s\S]*?)\n```/
+                            );
+                            return match;
+                        },
+                    },
+                    retries: 6,
+                    guards: [
+                        {
+                            type: "filter",
+                            filter: "code",
+                            policy: "retry",
+                        },
+                        {
+                            type: "filter",
+                            filter: "public_tests_passed",
+                            overrides: {
+                                content: `
+                           Here are the results of testing your code:
+                           {{#each public_test_results}}
+                               - Test Result: {{@index}} -
+                               {{#if (eq this.status "pass")}}
+                               Success: {{this.message}}. Congratulations, no errors detected!
+                               {{else if (eq this.error "SyntaxError")}}
+                               Syntax Error Detected: {{this.message}}. Please check your syntax.
+                               {{else if (eq this.error "Timeout")}}
+                               Timeout Error: {{this.message}}. Consider optimizing your code for better performance.
+                               {{else if (eq this.error "RuntimeError")}}
+                               Runtime Error: {{this.message}}. Ensure all variables are defined and accessible.
+                               {{else if (eq this.error "TypeError")}}
+                               Type Error: {{this.message}}. Verify that your data types are correct.
+                               {{else}}
+                               Unknown Error: {{this.message}}. Review the code for potential issues.
+                               {{/if}}
+                           {{/each}}
+                           `,
+                            },
+                        },
+                    ],
+                    onSuccess: [
+                        {
+                            type: "message",
+                            role: "user",
+                            content: `
+                            Total test results:
+                            {{#each public_test_results}}
+                               - Test Result: {{@index}} -
+                               {{#if (eq this.status "pass")}}
+                               Success: {{this.message}}. Congratulations, no errors detected!
+                               {{else if (eq this.error "SyntaxError")}}
+                               Syntax Error Detected: {{this.message}}. Please check your syntax.
+                               {{else if (eq this.error "Timeout")}}
+                               Timeout Error: {{this.message}}. Consider optimizing your code for better performance.
+                               {{else if (eq this.error "RuntimeError")}}
+                               Runtime Error: {{this.message}}. Ensure all variables are defined and accessible.
+                               {{else if (eq this.error "TypeError")}}
+                               Type Error: {{this.message}}. Verify that your data types are correct.
+                               {{else}}
+                               Unknown Error: {{this.message}}. Review the code for potential issues.
+                               {{/if}}
+                           {{/each}}
+                            {{#each private_test_results}}
+                               - Test Result: {{@index}} -
+                               {{#if (eq this.status "pass")}}
+                               Success: {{this.message}}. Congratulations, no errors detected!
+                               {{else if (eq this.error "SyntaxError")}}
+                               Syntax Error Detected: {{this.message}}. Please check your syntax.
+                               {{else if (eq this.error "Timeout")}}
+                               Timeout Error: {{this.message}}. Consider optimizing your code for better performance.
+                               {{else if (eq this.error "RuntimeError")}}
+                               Runtime Error: {{this.message}}. Ensure all variables are defined and accessible.
+                               {{else if (eq this.error "TypeError")}}
+                               Type Error: {{this.message}}. Verify that your data types are correct.
+                               {{else}}
+                               Unknown Error: {{this.message}}. Review the code for potential issues.
+                               {{/if}}
+                           {{/each}}
+                           {{#each generated_test_results}}
+                               {{#if (eq this.status "pass")}}
+                               Success: {{this.message}}. Congratulations, no errors detected!
+                               {{else if (eq this.error "SyntaxError")}}
+                               Syntax Error Detected: {{this.message}}. Please check your syntax.
+                               {{else if (eq this.error "Timeout")}}
+                               Timeout Error: {{this.message}}. Consider optimizing your code for better performance.
+                               {{else if (eq this.error "RuntimeError")}}
+                               Runtime Error: {{this.message}}. Ensure all variables are defined and accessible.
+                               {{else if (eq this.error "TypeError")}}
+                               Type Error: {{this.message}}. Verify that your data types are correct.
+                               {{else}}
+                               Unknown Error: {{this.message}}. Review the code for potential issues.
+                               {{/if}}
+                           {{/each}}
+                           `,
+                        },
+                    ],
+                    onFail: [
+                        // omitted in this case
+                    ],
+                    finally: [
+                        {
+                            type: "prompt",
+                            set: "summary",
+                            content: `We are now done with this challenge.
+State the challenge name and index. List the various tries, the result (success, partial, fail) of each, and what changed between the versions. Success means all tests passed, partial success means all public tests passed, and fail means all public tests did not pass. For each try, give the numbers of each type of test that was passed.
+
+
+Then, briefly list the errors you encountered and classify their types (e.g., syntax error, runtime error, etc.) and what you (or should have done) to resolve them. Do not mention challenge-specific details, just general code generation strategy issues. Then provide any changes that should be made to the initial code generation prompts or any of the subsequent prompts.
+If you encountered no errors, say "No errors encountered."`,
+                        },
+                    ],
+                },
+            ],
+        },
+        //we run a prompt on all the summaries, asking to give us the overall results (computed from the $ object) and any patterns emerging from the summaries as a whole.
+    ],
+};
+
+const smartgpt = {
+    elements: [
+        {
+            type: "init",
+            content: {
+                $: {
+                    prompt: {
+                        model: "gpt-4-0125-preview",
+                        temperature: 0.5,
+                    },
+                },
+                userQuestion:
+                    "What are the potential long-term impacts of artificial intelligence on society and the economy?",
+            },
+        },
+        {
+            type: "prompt",
+            n: 3,
+            content:
+                "You are a researcher tasked with providing a comprehensive answer to the following question: {{userQuestion}}. Please break down your response into key points, considering various aspects such as technological advancements, societal implications, ethical considerations, and economic consequences. Provide a well-structured, in-depth analysis.",
+        },
+        {
+            type: "prompt",
+            content:
+                "Acting as an impartial reviewer, carefully examine the {{history.length}} responses provided. Analyze the strengths and weaknesses of each response, considering factors such as thoroughness, clarity, objectivity, and relevance to the original question. Provide a comparative assessment and rank the responses from best to worst, explaining your reasoning.",
+        },
+        {
+            type: "prompt",
+            content:
+                "Based on the reviewer's feedback, select the most comprehensive and insightful response from the options provided. Refine and expand upon this chosen response, addressing any shortcomings identified by the reviewer and incorporating the best elements from the other responses as appropriate. The goal is to produce a definitive, well-rounded answer to the original question: {{userQuestion}}",
+            set: "aiAnswer",
+        },
+    ],
+};
+
 // const result = await executeDSPL(poemdspl);
 // console.log(await result.blackboard.animals);
 
-const sres = await executeDSPL(sonnet);
-console.log(await sres.blackboard.sonnet);
+// const sres = await executeDSPL(sonnet);
+// console.log(await sres.blackboard.sonnet);
+// const cres = await executeDSPL(singlechallenge);
+// console.log(await cres.blackboard.summary);
+
+// const codiumres = await executeDSPL(codium);
+// const summaries = await codiumres.blackboard.challenges.then((c) =>
+//     Promise.all(c.map((ch) => ch.summary))
+// );
+// console.log(summaries);
+
+// Deno.writeTextFile(
+//     "./dspl/test/results.json",
+//     JSON.stringify(summaries, null, 2)
+// );
+
+const sgptres = await executeDSPL(smartgpt);
+console.log(await sgptres.blackboard.aiAnswer);
