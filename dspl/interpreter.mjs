@@ -44,6 +44,13 @@ const llm = async (history, config, file) => {
                 }
                 return { role, content };
             })
+            .map(({ role, content }) => {
+                content = !(typeof content === "string")
+                    ? JSON.stringify(content, null, 2)
+                    : content;
+
+                return { role, content };
+            })
             .filter(Boolean);
 
         const anthropic = new Anthropic({
@@ -57,12 +64,15 @@ const llm = async (history, config, file) => {
                 temperature,
                 max_tokens,
                 messages: userMessages,
-                system: systemMessage.trim(),
+                system: `${systemMessage.trim()}\n Your response must be in JSON format inside a markdown code block, with no additional text`,
             });
 
             console.log("Response:", response);
             const assistantMessages = [
-                { role: "assistant", content: response.content[0].text },
+                {
+                    role: "assistant",
+                    content: JSON.parse(response.content[0].text),
+                },
             ];
 
             const newHistory = [...history, ...assistantMessages];
@@ -76,7 +86,19 @@ const llm = async (history, config, file) => {
         const messages = history
             .filter((item) => !Array.isArray(item))
             .filter((item) => item.meta?.hidden !== true)
-            .map(({ role, content }) => ({ role, content }));
+            .map(({ role, content }) => ({ role, content }))
+            .map(({ role, content }) => {
+                content = !(typeof content === "string")
+                    ? JSON.stringify(content, null, 2)
+                    : content;
+
+                return { role, content };
+            })
+            .concat({
+                role: "system",
+                content:
+                    "Your response must be in JSON format, with no additional text",
+            });
 
         const openai = new OpenAI({
             dangerouslyAllowBrowser: true,
@@ -89,15 +111,18 @@ const llm = async (history, config, file) => {
                 model,
                 temperature,
                 max_tokens,
-                response_format,
+                response_format: {
+                    type: "json_object",
+                },
                 messages,
                 n,
             });
 
             console.log("Response:", response);
-            const assistantMessages = response.choices.map(
-                ({ message }) => message
-            );
+            const assistantMessages = response.choices.map(({ message }) => {
+                message.content = JSON.parse(message.content);
+                return message;
+            });
 
             const newHistory = [...history, ...assistantMessages];
             console.log("New history:", newHistory);
@@ -647,12 +672,12 @@ async function executeStep(
     });
 
     if (parse) {
-        const parsedContent = await extractVariables(
-            context.history.slice(-1).pop().content,
-            parse
-        );
-        console.log("Parsed content:", parsedContent);
-        Object.assign(context.blackboard, parsedContent);
+        for (const [variableName, path] of Object.entries(parse)) {
+            const [bucket, key] = path.split(".");
+            context[bucket][key] = context.history.slice(-1).pop().content[
+                variableName
+            ];
+        }
     }
 
     if (set) {
@@ -763,7 +788,7 @@ async function extractVariables(content, parseConfig) {
     for (const [variableName, fn] of Object.entries(parseConfig)) {
         const match = await fn(content);
         if (match) {
-            extractedVariables[variableName] = match[1];
+            extractedVariables[variableName] = match;
         }
     }
     return extractedVariables;
@@ -960,16 +985,11 @@ const singlechallenge = {
         },
         {
             type: "prompt",
-            retries: 3,
+            retries: 1,
             content:
-                "Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.\\nThe code:\\n- must be a standalone ECMAScript module with no dependencies.\\n- must have a function as the default export.\\n- must accept a single 'lines' argument (an array of input strings).\\n- must return a single array of output strings.\\n- must not mix BigInt and other types, must always use explicit conversions.\\n- should be commented to indicate which part of the code relates to which problem constraint.\\n- should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.\\n\\nIMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general, avoid making unwarranted assumptions about input on the basis of the test(s) you can see.\\n\\nConsider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.\\n\\nEnclose your code in a markdown code block.",
+                "Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.\\nThe code:\\n- must be a standalone ECMAScript module with no dependencies.\\n- must have a function as the default export.\\n- must accept a single 'lines' argument (an array of input strings).\\n- must return a single array of output strings.\\n- must not mix BigInt and other types, must always use explicit conversions.\\n- should be commented to indicate which part of the code relates to which problem constraint.\\n- should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.\\n\\nIMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general, avoid making unwarranted assumptions about input on the basis of the test(s) you can see.\\n\\nConsider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.\n Put your code inside the 'code' property on your JSON response.",
             parse: {
-                code: (response) => {
-                    const match = response.match(
-                        /```(?:javascript|)?\s*\n([\s\S]*?)\n```/
-                    );
-                    return match;
-                },
+                code: "$.code",
             },
             guards: [
                 {
@@ -1099,7 +1119,7 @@ const codium = {
                                     );
                                 },
                             },
-                        }).then((data) => data.slice(0, 1)),
+                        }).then((c) => c.slice(0, 5)),
                 },
             },
         },
@@ -1138,16 +1158,11 @@ const codium = {
               
                Consider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.
               
-               Enclose your code in a markdown code block.`,
+               Set your response to the 'code' property in your response JSON.`,
                         parse: {
-                            code: (response) => {
-                                const match = response.match(
-                                    /```(?:javascript|)?\s*\n([\s\S]*?)\n```/
-                                );
-                                return match;
-                            },
+                            code: "item.code",
                         },
-                        retries: 6,
+                        retries: 0,
                         guards: [
                             {
                                 type: "filter",
@@ -1245,8 +1260,11 @@ If you encountered no errors, say "No errors encountered."`,
             {{#each challenge in await model.$.challenges}}
             Challenge: {{await challenge.name}}
             {{#each res in await challenge.public_test_results}}
-            - Test Result: {{scope.index}} - {{await res.status}}
+            - Test Result: {{scope.index}} - {{await res.status}} - {{await res.message}}
             {{/each}}
+
+            Code:
+            {{await challenge.code}}
             {{/each}}
             `,
         },

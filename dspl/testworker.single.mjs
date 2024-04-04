@@ -18,6 +18,10 @@ self.onmessage = async (event) => {
             expected: expected,
         });
     } catch (e) {
-        self.postMessage({ error: e.toString(), stack: e.stack });
+        self.postMessage({
+            status: "fail",
+            message: e.toString(),
+            stack: e.stack,
+        });
     }
 };
