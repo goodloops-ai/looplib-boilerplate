@@ -149,6 +149,125 @@ const elementModules = {
             return context;
         },
     },
+    do: {
+        async execute(elementData, context, config) {
+            const {
+                dspl,
+                map,
+                extract,
+                history,
+                for: forConfig,
+                while: whileConfig,
+            } = elementData;
+
+            const clonedDspl = _.cloneDeepWith(dspl, (value) => {
+                if (typeof value === "function") {
+                    return value;
+                }
+            });
+
+            const initStep = clonedDspl.elements.find(
+                (step) => step.type === "init"
+            );
+
+            const resolvedValues = await Promise.all(
+                Object.entries(map || {}).map(async ([key, parentKey]) => ({
+                    [key]: await context.blackboard[parentKey],
+                }))
+            );
+
+            const mergedValues = Object.assign(
+                {
+                    $: context.blackboard.$,
+                },
+                ...resolvedValues
+            );
+
+            if (initStep) {
+                initStep.content = {
+                    ...initStep.content,
+                    ...mergedValues,
+                };
+            } else {
+                clonedDspl.elements.unshift({
+                    type: "init",
+                    init: mergedValues,
+                });
+            }
+
+            const executeFlow = async (item = {}) => {
+                let childContext = {
+                    history: [],
+                    blackboard: {},
+                    item,
+                };
+
+                try {
+                    childContext = await executeDSPL(clonedDspl, childContext);
+                } catch (error) {
+                    childContext.history.push({
+                        role: "system",
+                        content: `Error in child flow: ${error.message}`,
+                    });
+                }
+
+                if (extract) {
+                    for (const [parentKey, childKey] of Object.entries(
+                        extract
+                    )) {
+                        context.blackboard[parentKey] = await childContext
+                            .blackboard[childKey];
+                    }
+                }
+
+                if (history === "hidden") {
+                    const hiddenHistory = childContext.history
+                        .slice(0, -1)
+                        .map((message) => ({
+                            ...message,
+                            meta: { hidden: true },
+                        }));
+                    context.history.push(
+                        ...hiddenHistory,
+                        childContext.history[childContext.history.length - 1]
+                    );
+                } else if (history === "flat") {
+                    context.history.push(...childContext.history);
+                } else {
+                    context.history.push(childContext.history);
+                }
+            };
+
+            if (forConfig) {
+                const { each, in: arrayName } = forConfig;
+                const array = await context.blackboard[arrayName];
+                const processedArray = await makeList(array, context, config);
+
+                for (const item of processedArray) {
+                    console.log("Loop item:", item);
+                    // Deno.exit();
+                    await executeFlow(item);
+                }
+            } else if (whileConfig) {
+                const { type, filter } = whileConfig;
+                const guardModule = guardModules[type];
+
+                if (!guardModule) {
+                    throw new Error(`Unsupported guard type: ${type}`);
+                }
+
+                while (true) {
+                    const { success } = await guardModule(context, { filter });
+                    if (!success) break;
+                    await executeFlow();
+                }
+            } else {
+                await executeFlow();
+            }
+
+            return context;
+        },
+    },
     image: {
         async execute(elementData, context) {
             const {
@@ -331,15 +450,15 @@ const elementModules = {
 
             if (initStep) {
                 // If an init step exists, merge the mapped parent blackboard values into its content
-                initStep.content = {
-                    ...initStep.content,
+                initStep.init = {
+                    ...initStep.init,
                     ...mergedValues,
                 };
             } else {
                 // If no init step exists, create a new one with the mapped parent blackboard values
                 clonedChildDspl.elements.unshift({
                     type: "init",
-                    content: mergedValues,
+                    init: mergedValues,
                 });
             }
 
@@ -485,12 +604,14 @@ const guardModules = {
 };
 
 // Execution engine
-async function executeDSPL(dsplCode) {
-    const dsplObject = dsplCode;
-    let context = {
+async function executeDSPL(
+    dsplCode,
+    context = {
         history: [],
         blackboard: {},
-    };
+    }
+) {
+    const dsplObject = dsplCode;
 
     for (const element of dsplObject.elements) {
         context = await executeStep(element, context);
@@ -556,6 +677,7 @@ async function executeStep(
             "finally",
             "do",
             "init",
+            "dspl",
         ];
         const properties = await extractPropertiesFromBlackboard(
             blackboard,
@@ -804,7 +926,7 @@ const sonnet = {
     elements: [
         {
             type: "init",
-            content: {
+            init: {
                 $: {
                     prompt: {
                         model: "gpt-3.5-turbo",
@@ -833,7 +955,7 @@ const poemdspl = {
     elements: [
         {
             type: "init",
-            content: {
+            init: {
                 $: {
                     prompt: {
                         model: "gpt-4-0125-preview",
@@ -850,18 +972,22 @@ const poemdspl = {
             set: "animals",
         },
         {
-            type: "for",
-            each: "animal",
-            in: "animals",
-            do: [
-                {
-                    type: "prompt",
-                    mode: "json",
-                    content:
-                        "write me a short children's book poem about {{animal}}",
-                    set: "poem",
-                },
-            ],
+            type: "do",
+            for: {
+                each: "animal",
+                in: "animals",
+            },
+            dspl: {
+                elements: [
+                    {
+                        type: "prompt",
+                        mode: "json",
+                        content:
+                            "write me a short children's book poem about {{item.animal}}",
+                        set: "poem",
+                    },
+                ],
+            },
         },
     ],
 };
@@ -875,7 +1001,7 @@ const singlechallenge = {
         },
         {
             type: "init",
-            content: {
+            init: {
                 $: {
                     prompt: {
                         model: "gpt-4-0125-preview",
@@ -1062,24 +1188,27 @@ const codium = {
             },
         },
         {
-            type: "for",
-            each: "challenge",
-            in: "challenges",
-            do: [
-                {
-                    type: "message",
-                    role: "system",
-                    content:
-                        "You are a top-rated code assistant based on a cutting-edge version of GPT, with far greater capabilities than any prior GPT model. You always return code when requested, and always pay the closest attention to instructions and other elements pointed to by the prompt. You never return partial code, never give up, and never refuse to return code.",
-                },
-                {
-                    type: "message",
-                    role: "user",
-                    content: "{{item.description}}",
-                },
-                {
-                    type: "prompt",
-                    content: `Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.
+            type: "do",
+            for: {
+                each: "challenge",
+                in: "challenges",
+            },
+            dspl: {
+                elements: [
+                    {
+                        type: "message",
+                        role: "system",
+                        content:
+                            "You are a top-rated code assistant based on a cutting-edge version of GPT, with far greater capabilities than any prior GPT model. You always return code when requested, and always pay the closest attention to instructions and other elements pointed to by the prompt. You never return partial code, never give up, and never refuse to return code.",
+                    },
+                    {
+                        type: "message",
+                        role: "user",
+                        content: "{{item.description}}",
+                    },
+                    {
+                        type: "prompt",
+                        content: `Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.
                The code:
                - must be a standalone ECMAScript module with no dependencies.
                - must have a function as the default export.
@@ -1094,32 +1223,32 @@ const codium = {
                Consider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.
               
                Enclose your code in a markdown code block.`,
-                    parse: {
-                        code: (response) => {
-                            const match = response.match(
-                                /```(?:javascript|)?\s*\n([\s\S]*?)\n```/
-                            );
-                            return match;
+                        parse: {
+                            code: (response) => {
+                                const match = response.match(
+                                    /```(?:javascript|)?\s*\n([\s\S]*?)\n```/
+                                );
+                                return match;
+                            },
                         },
-                    },
-                    retries: 6,
-                    guards: [
-                        {
-                            type: "filter",
-                            filter: "code",
-                            policy: "retry",
-                        },
-                        {
-                            type: "filter",
-                            filter: "public_tests_passed",
-                            policy: "retry",
-                        },
-                    ],
-                    onSuccess: [
-                        {
-                            type: "message",
-                            role: "user",
-                            content: `
+                        retries: 6,
+                        guards: [
+                            {
+                                type: "filter",
+                                filter: "code",
+                                policy: "retry",
+                            },
+                            {
+                                type: "filter",
+                                filter: "public_tests_passed",
+                                policy: "retry",
+                            },
+                        ],
+                        onSuccess: [
+                            {
+                                type: "message",
+                                role: "user",
+                                content: `
                             Total test results:
                             {{tests_passed}}
 
@@ -1171,25 +1300,26 @@ const codium = {
                                {{/if}}
                            {{/each}}
                            `,
-                        },
-                    ],
-                    onFail: [
-                        // omitted in this case
-                    ],
-                    finally: [
-                        {
-                            type: "prompt",
-                            set: "summary",
-                            content: `We are now done with this challenge.
+                            },
+                        ],
+                        onFail: [
+                            // omitted in this case
+                        ],
+                        finally: [
+                            {
+                                type: "prompt",
+                                set: "summary",
+                                content: `We are now done with this challenge.
 State the challenge name and index. List the various tries, the result (success, partial, fail) of each, and what changed between the versions. Success means all tests passed, partial success means all public tests passed, and fail means all public tests did not pass. For each try, give the numbers of each type of test that was passed.
 
 
 Then, briefly list the errors you encountered and classify their types (e.g., syntax error, runtime error, etc.) and what you (or should have done) to resolve them. Do not mention challenge-specific details, just general code generation strategy issues. Then provide any changes that should be made to the initial code generation prompts or any of the subsequent prompts.
 If you encountered no errors, say "No errors encountered."`,
-                        },
-                    ],
-                },
-            ],
+                            },
+                        ],
+                    },
+                ],
+            },
         },
         //we run a prompt on all the summaries, asking to give us the overall results (computed from the $ object) and any patterns emerging from the summaries as a whole.
     ],
@@ -1199,7 +1329,7 @@ const smartgpt = {
     elements: [
         {
             type: "init",
-            content: {
+            init: {
                 $: {
                     prompt: {
                         model: "gpt-4-0125-preview",
@@ -1234,7 +1364,7 @@ const shaiku = {
     elements: [
         {
             type: "init",
-            content: {
+            init: {
                 $: {
                     prompt: {
                         model: "gpt-4-0125-preview",
@@ -1262,7 +1392,7 @@ const haikuEpubFlow = {
     elements: [
         {
             type: "init",
-            content: {
+            init: {
                 $: {
                     prompt: {
                         model: "claude-3-opus-20240229",
@@ -1310,7 +1440,7 @@ const bookWritingFlow = {
     elements: [
         {
             type: "init",
-            content: {
+            init: {
                 $: {
                     prompt: {
                         model: "gpt-4-0125-preview",
