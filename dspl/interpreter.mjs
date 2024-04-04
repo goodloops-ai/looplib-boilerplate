@@ -6,7 +6,7 @@ import { ensureDir } from "https://deno.land/std/fs/mod.ts";
 import { dirname } from "https://deno.land/std/path/mod.ts";
 import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
 import epub from "https://deno.land/x/epubgen/mod.ts";
-import xmlserializer from "https://esm.sh/xmlserializer";
+import PQueue from "https://esm.sh/p-queue";
 
 globalThis.XMLSerializer = function () {
     return {
@@ -115,8 +115,8 @@ const llm = async (history, config, file) => {
 // Element modules
 const elementModules = {
     init: {
-        async execute({ content }, context) {
-            context.blackboard = mem(content);
+        async execute({ init }, context) {
+            context.blackboard = mem(init);
             return context;
         },
     },
@@ -262,7 +262,7 @@ const elementModules = {
 
             let lastContext = context;
 
-            for (const item of processedArray) {
+            const executeElement = async (item) => {
                 item.$ = context.blackboard.$;
                 let loopContext = {
                     history: JSON.parse(JSON.stringify(lastContext.history)),
@@ -271,6 +271,7 @@ const elementModules = {
 
                 console.log(
                     "Loop item:",
+                    await item.description,
                     item,
                     loopContext,
                     loopElements,
@@ -285,11 +286,22 @@ const elementModules = {
                     );
                 }
 
-                if (history === "sequential") {
-                    lastContext = loopContext;
-                }
-            }
+                return loopContext;
+            };
 
+            if (history === "sequential") {
+                for (const item of processedArray) {
+                    lastContext = await executeElement(item);
+                }
+            } else {
+                // Use an async library to enforce a concurrency limit
+                const queue = new PQueue({ concurrency: 5 });
+
+                const tasks = processedArray.map((item) =>
+                    queue.add(() => executeElement(item))
+                );
+                await Promise.all(tasks);
+            }
             return context;
         },
     },
@@ -462,9 +474,9 @@ const guardModules = {
         };
     },
     filter: async (context, guard) => {
-        console.log("Filter guard:", guard.filter);
         const pass = await context.blackboard[guard.filter];
 
+        console.log("Filter guard:", guard.filter, pass);
         return {
             success: pass,
             message: pass ? "Guard condition met!" : "Guard condition failed.",
@@ -523,6 +535,7 @@ async function executeStep(
             "onFail",
             "finally",
             "do",
+            "init",
         ];
         const properties = await extractPropertiesFromBlackboard(
             blackboard,
@@ -560,7 +573,7 @@ async function executeStep(
         elementData,
         context.blackboard
     );
-    const originalHistoryLength = context.history.length;
+    const originalHistoryLength = context.history.length; //xw + 1; //FIXME, this is a hack to get the length of the history before the element is executed
     context = await elementModule.execute(resolvedElementData, context, {
         ...config,
         ...resolvedElementData,
@@ -576,11 +589,11 @@ async function executeStep(
     }
 
     if (set) {
-        console.log(
-            "Setting variable:",
-            set,
-            context.history.slice(-1).pop().content
-        );
+        // console.log(
+        //     "Setting variable:",
+        //     set,
+        //     context.history.slice(-1).pop().content
+        // );
         context.blackboard[set] = context.history.slice(-1).pop().content;
     }
 
@@ -617,6 +630,19 @@ async function executeStep(
                                         return message;
                                     })
                             );
+                        return await executeStep(
+                            {
+                                type,
+                                parse,
+                                set,
+                                ...elementData,
+                                ...guard.overrides,
+                                retries: retries - 1,
+                            },
+                            context,
+                            config,
+                            retries - 1
+                        );
                     } else if (guard.overrides) {
                         return await executeStep(
                             {
@@ -714,10 +740,8 @@ const makeList = async (
     if (Array.isArray(input)) {
         const $ = await context.blackboard._obj;
         return input.map((item) => {
-            return {
-                $,
-                ...item,
-            };
+            item.$ = $;
+            return item;
         });
     }
     const prompt = {
@@ -781,6 +805,7 @@ const sonnet = {
         },
     ],
 };
+
 const poemdspl = {
     elements: [
         {
@@ -900,11 +925,12 @@ const singlechallenge = {
                 {
                     type: "message",
                     role: "user",
-                    content: `total test results: {{#each public_test_results}}{{this.status}}{{#unless @last}}, {{/unless}}{{/each}}`,
+                    content: `total test results {{tests_passed}}: {{#each public_test_results}}{{this.status}}{{#unless @last}}, {{/unless}}{{/each}}`,
                 },
                 {
                     type: "prompt",
                     set: "summary",
+                    retries: 0,
                     content:
                         "We are now done with this challenge.\\nState the challenge name and index. List the various tries, the result (success, partial, fail) of each, and what changed between the versions. Success means all tests passed, partial success means all public tests passed, and fail means all public tests did not pass. For each try, give the numbers of each type of test that was passed.\\n\\nThen, briefly list the errors you encountered and classify their types (e.g., syntax error, runtime error, etc.) and what you (or should have done) to resolve them. Do not mention challenge-specific details, just general code generation strategy issues. Then provide any changes that should be made to the initial code generation prompts or any of the subsequent prompts.\\nIf you encountered no errors, say 'No errors encountered.'",
                 },
@@ -927,7 +953,7 @@ const codium = {
         },
         {
             type: "init",
-            content: {
+            init: {
                 $: {
                     prompt: {
                         model: "gpt-3.5-turbo",
@@ -939,8 +965,8 @@ const codium = {
                     get: ({ challengeFile }) =>
                         importJson(challengeFile, {
                             public_test_results: {
-                                get: ({ public_tests, code }) =>
-                                    runTests(code, public_tests),
+                                get: async ({ public_tests, code }) =>
+                                    await runTests(code, public_tests),
                             },
                             public_tests_passed: {
                                 get: ({ public_test_results }) =>
@@ -951,13 +977,13 @@ const codium = {
                                     ]),
                             },
                             private_test_results: {
-                                get: ({
+                                get: async ({
                                     public_tests_passed,
                                     private_tests,
                                     code,
                                 }) =>
                                     public_tests_passed
-                                        ? runTests(code, private_tests, {
+                                        ? await runTests(code, private_tests, {
                                               breakOnFailure: true,
                                           })
                                         : [],
@@ -971,16 +997,20 @@ const codium = {
                                     ]),
                             },
                             generated_test_results: {
-                                get: ({
+                                get: async ({
                                     public_tests_passed,
                                     private_tests_passed,
                                     generated_tests,
                                     code,
                                 }) =>
                                     public_tests_passed && private_tests_passed
-                                        ? runTests(code, generated_tests, {
-                                              breakOnFailure: true,
-                                          })
+                                        ? await runTests(
+                                              code,
+                                              generated_tests,
+                                              {
+                                                  breakOnFailure: true,
+                                              }
+                                          )
                                         : [],
                             },
                             generated_tests_passed: {
@@ -1004,7 +1034,7 @@ const codium = {
                                     );
                                 },
                             },
-                        }),
+                        }), //.then((data) => data.slice(0, 1)),
                 },
             },
         },
@@ -1059,27 +1089,7 @@ const codium = {
                         {
                             type: "filter",
                             filter: "public_tests_passed",
-                            overrides: {
-                                content: `
-                           Here are the results of testing your code:
-                           {{#each public_test_results}}
-                               - Test Result: {{@index}} -
-                               {{#if (eq this.status "pass")}}
-                               Success: {{this.message}}. Congratulations, no errors detected!
-                               {{else if (eq this.error "SyntaxError")}}
-                               Syntax Error Detected: {{this.message}}. Please check your syntax.
-                               {{else if (eq this.error "Timeout")}}
-                               Timeout Error: {{this.message}}. Consider optimizing your code for better performance.
-                               {{else if (eq this.error "RuntimeError")}}
-                               Runtime Error: {{this.message}}. Ensure all variables are defined and accessible.
-                               {{else if (eq this.error "TypeError")}}
-                               Type Error: {{this.message}}. Verify that your data types are correct.
-                               {{else}}
-                               Unknown Error: {{this.message}}. Review the code for potential issues.
-                               {{/if}}
-                           {{/each}}
-                           `,
-                            },
+                            policy: "retry",
                         },
                     ],
                     onSuccess: [
@@ -1088,6 +1098,8 @@ const codium = {
                             role: "user",
                             content: `
                             Total test results:
+                            {{tests_passed}}
+
                             {{#each public_test_results}}
                                - Test Result: {{@index}} -
                                {{#if (eq this.status "pass")}}
@@ -1380,14 +1392,14 @@ const bookWritingFlow = {
     ],
 };
 
-// Execute the DSPL flow
-executeDSPL(bookWritingFlow)
-    .then((context) => {
-        console.log("Book writing flow executed successfully!");
-    })
-    .catch((error) => {
-        console.error("Error executing book writing flow:", error);
-    });
+// // Execute the DSPL flow
+// executeDSPL(bookWritingFlow)
+//     .then((context) => {
+//         console.log("Book writing flow executed successfully!");
+//     })
+//     .catch((error) => {
+//         console.error("Error executing book writing flow:", error);
+//     });
 // Execute the DSPL flow
 // executeDSPL(haikuEpubFlow)
 //     .then((context) => {
@@ -1408,17 +1420,17 @@ executeDSPL(bookWritingFlow)
 // const cres = await executeDSPL(singlechallenge);
 // console.log(await cres.blackboard.summary);
 
-// const codiumres = await executeDSPL(codium);
-// const summaries = await codiumres.blackboard.challenges.then((c) =>
-//     Promise.all(c.map((ch) => ch.summary))
-// );
-// console.log(summaries);
+const codiumres = await executeDSPL(codium);
+const summaries = await codiumres.blackboard.challenges.then((c) =>
+    Promise.all(c.map(async (ch) => await ch._obj))
+);
+console.log(summaries);
 
-// Deno.writeTextFile(
-//     "./dspl/test/results.json",
-//     JSON.stringify(summaries, null, 2)
-// );
-
+await Deno.writeTextFile(
+    "./dspl/test/results.json",
+    JSON.stringify(summaries, null, 2)
+);
+console.log("File written to ./dspl/test/results.json");
 // const sgptres = await executeDSPL(smartgpt);
 // console.log(await sgptres.blackboard.aiAnswer);
 
