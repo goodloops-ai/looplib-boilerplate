@@ -88,13 +88,19 @@ export function mem(def) {
     };
 
     const resolveDeps = (arg, key, seen = new Set()) => {
+        if (key === "constructor") return;
         if (seen.has(key)) return;
         seen.add(key);
         if (!memoizers[key]) return;
         const _deps = deps[key];
         if (_deps) {
-            for (const dep of _deps) {
-                resolveDeps(arg, dep);
+            console.log("resolveDeps", key, _deps);
+            try {
+                for (const dep of _deps) {
+                    resolveDeps(arg, dep);
+                }
+            } catch (e) {
+                return;
             }
         }
 

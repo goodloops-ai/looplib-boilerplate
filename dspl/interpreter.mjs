@@ -7,6 +7,7 @@ import { dirname } from "https://deno.land/std/path/mod.ts";
 import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
 import epub from "https://deno.land/x/epubgen/mod.ts";
 import PQueue from "https://esm.sh/p-queue";
+import moe from "https://esm.sh/@toptensoftware/moe-js";
 
 globalThis.XMLSerializer = function () {
     return {
@@ -18,10 +19,6 @@ globalThis.DOMParser = DOMParser;
 
 // import EpubGenerator from "https://esm.sh/epub-gen";
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
-import Handlebars from "https://esm.sh/handlebars";
-Handlebars.registerHelper("eq", function (arg1, arg2, options) {
-    return arg1 === arg2;
-});
 await load({ export: true });
 
 const llm = async (history, config, file) => {
@@ -122,21 +119,11 @@ const elementModules = {
     },
     prompt: {
         async execute({ content, ...config }, context) {
-            const blackboardProps = extractPropertiesFromTemplate(content);
-            const resolvedBlackboard = {};
+            console.log("Prompt content:", content);
 
-            for (const prop of blackboardProps) {
-                resolvedBlackboard[prop] = await context.blackboard[prop];
-            }
-            console.log(
-                "Prompt content:",
-                content,
-                blackboardProps,
-                resolvedBlackboard
-            );
-
-            const processedContent =
-                Handlebars.compile(content)(resolvedBlackboard);
+            const processedContent = await moe.compile(content, {
+                asyncTemplate: true,
+            })(context.blackboard);
             context.history.push({ role: "user", content: processedContent });
             context = await this.runLLM(context, config);
             return context;
@@ -205,6 +192,7 @@ const elementModules = {
                 try {
                     childContext = await executeDSPL(clonedDspl, childContext);
                 } catch (error) {
+                    console.error("Error in child flow:", error);
                     childContext.history.push({
                         role: "system",
                         content: `Error in child flow: ${error.message}`,
@@ -509,49 +497,10 @@ const elementModules = {
             return context;
         },
     },
-    if: {
-        async execute(conditionData, context, config) {
-            const { condition, do: conditionElements } = conditionData;
-            const blackboardProps = extractPropertiesFromTemplate(condition);
-            const resolvedBlackboard = {};
-
-            for (const prop of blackboardProps) {
-                resolvedBlackboard[prop] = await context.blackboard[prop];
-            }
-
-            const evaluatedCondition = evalCondition(
-                condition,
-                resolvedBlackboard
-            );
-
-            if (evaluatedCondition) {
-                for (const element of conditionElements) {
-                    context = await executeStep(element, context, config);
-                }
-            }
-
-            return context;
-        },
-    },
     message: {
         async execute({ role, content }, context) {
-            const blackboardProps = extractPropertiesFromTemplate(content);
-            const resolvedBlackboard = {};
-
-            for (const prop of blackboardProps) {
-                resolvedBlackboard[prop] = await context.blackboard[prop];
-            }
-
-            console.log(
-                "Message content:",
-                content,
-                blackboardProps,
-                resolvedBlackboard
-            );
-
-            const processedContent =
-                Handlebars.compile(content)(resolvedBlackboard);
-            context.history.push({ role, content: processedContent });
+            console.log("Message content:", content);
+            context.history.push({ role, content });
             return context;
         },
     },
@@ -636,35 +585,6 @@ async function executeStep(
     }
 
     // Resolve blackboard references in element configurations deeply
-    const extractPropertiesFromBlackboard = async (
-        blackboard,
-        item,
-        template
-    ) => {
-        const props = extractPropertiesFromTemplate(template);
-        const resolvedProps = {
-            $: {},
-            item: {},
-        };
-        for (const prop of props) {
-            const [key, path] = prop.split(".");
-            if (!path) {
-                resolvedProps[key] = await blackboard[key];
-            } else {
-                resolvedProps[key] = resolvedProps[key] || {};
-                resolvedProps[key][path] =
-                    key === "$" ? await blackboard[path] : await item[path];
-            }
-
-            if (key === "item") {
-                console.log("Item:", key, path, item, resolvedProps[key]);
-                // Deno.exit();
-                // console.log(await blackboard._obj);
-            }
-        }
-
-        return resolvedProps;
-    };
 
     const resolveBlackboardReferences = async (value, blackboard, item) => {
         if (typeof value === "function") {
@@ -679,15 +599,17 @@ async function executeStep(
             "init",
             "dspl",
         ];
-        const properties = await extractPropertiesFromBlackboard(
-            blackboard,
-            item,
-            value
-        );
 
         if (typeof value === "string") {
-            const template = Handlebars.compile(value);
-            return template(properties);
+            const template = moe.compile(value, { asyncTemplate: true });
+            console.log(
+                "Template:",
+                value,
+                template,
+                blackboard,
+                await item?.description
+            );
+            return await template({ $: blackboard, item: item });
         } else if (Array.isArray(value)) {
             return Promise.all(
                 value.map((v) =>
@@ -864,15 +786,9 @@ function extractPropertiesFromTemplate(templateString) {
     return Array.from(properties);
 }
 async function evalCondition(condition, blackboard) {
-    const blackboardProps = extractPropertiesFromTemplate(condition);
-    const resolvedBlackboard = {};
-
-    for (const prop of blackboardProps) {
-        resolvedBlackboard[prop] = await blackboard[prop];
-    }
-
-    const processedCondition =
-        Handlebars.compile(condition)(resolvedBlackboard);
+    const processedCondition = await moe.compile(condition, {
+        asyncTemplate: true,
+    })(blackboard);
     return eval(processedCondition);
 }
 
@@ -983,7 +899,7 @@ const poemdspl = {
                         type: "prompt",
                         mode: "json",
                         content:
-                            "write me a short children's book poem about {{item.animal}}",
+                            "write me a short children's book poem about {{await model.item.animal}}",
                         set: "poem",
                     },
                 ],
@@ -1183,7 +1099,7 @@ const codium = {
                                     );
                                 },
                             },
-                        }), //.then((data) => data.slice(0, 1)),
+                        }).then((data) => data.slice(0, 1)),
                 },
             },
         },
@@ -1204,7 +1120,7 @@ const codium = {
                     {
                         type: "message",
                         role: "user",
-                        content: "{{item.description}}",
+                        content: "{{await model.item.description}}",
                     },
                     {
                         type: "prompt",
@@ -1250,53 +1166,54 @@ const codium = {
                                 role: "user",
                                 content: `
                             Total test results:
-                            {{tests_passed}}
+                            {{await model.item.tests_passed}}
 
-                            {{#each public_test_results}}
-                               - Test Result: {{@index}} -
-                               {{#if (eq this.status "pass")}}
-                               Success: {{this.message}}. Congratulations, no errors detected!
-                               {{else if (eq this.error "SyntaxError")}}
-                               Syntax Error Detected: {{this.message}}. Please check your syntax.
-                               {{else if (eq this.error "Timeout")}}
-                               Timeout Error: {{this.message}}. Consider optimizing your code for better performance.
-                               {{else if (eq this.error "RuntimeError")}}
-                               Runtime Error: {{this.message}}. Ensure all variables are defined and accessible.
-                               {{else if (eq this.error "TypeError")}}
-                               Type Error: {{this.message}}. Verify that your data types are correct.
-                               {{else}}
-                               Unknown Error: {{this.message}}. Review the code for potential issues.
+                            {{#each res in await model.item.public_test_results}}
+                               - Test Result: {{scope.index}} -
+                               {{#if await res.status == "pass"}}
+                               Success: {{await res.message}}. Congratulations, no errors detected!
+                               {{#elseif await res.error == "SyntaxError"}}
+                               Syntax Error Detected: {{await res.message}}. Please check your syntax.
+                               {{#elseif await res.error == "Timeout"}}
+                               Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
+                               {{#elseif await res.error == "RuntimeError"}}
+                               Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
+                               {{#elseif await res.error == "TypeError"}}
+                               Type Error: {{await res.message}}. Verify that your data types are correct.
+                               {{#else}}
+                               Unknown Error: {{await res.message}}. Review the code for potential issues.
                                {{/if}}
                            {{/each}}
-                            {{#each private_test_results}}
-                               - Test Result: {{@index}} -
-                               {{#if (eq this.status "pass")}}
-                               Success: {{this.message}}. Congratulations, no errors detected!
-                               {{else if (eq this.error "SyntaxError")}}
-                               Syntax Error Detected: {{this.message}}. Please check your syntax.
-                               {{else if (eq this.error "Timeout")}}
-                               Timeout Error: {{this.message}}. Consider optimizing your code for better performance.
-                               {{else if (eq this.error "RuntimeError")}}
-                               Runtime Error: {{this.message}}. Ensure all variables are defined and accessible.
-                               {{else if (eq this.error "TypeError")}}
-                               Type Error: {{this.message}}. Verify that your data types are correct.
-                               {{else}}
-                               Unknown Error: {{this.message}}. Review the code for potential issues.
+                            {{#each res in await model.item.private_test_results}}
+                               - Test Result: {{scope.index}} -
+                               {{#if await res.status == "pass"}}
+                               Success: {{await res.message}}. Congratulations, no errors detected!
+                               {{#elseif await res.error == "SyntaxError"}}
+                               Syntax Error Detected: {{await res.message}}. Please check your syntax.
+                               {{#elseif await res.error == "Timeout"}}
+                               Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
+                               {{#elseif await res.error == "RuntimeError"}}
+                               Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
+                               {{#elseif await res.error == "TypeError"}}
+                               Type Error: {{await res.message}}. Verify that your data types are correct.
+                               {{#else}}
+                               Unknown Error: {{await res.message}}. Review the code for potential issues.
                                {{/if}}
                            {{/each}}
-                           {{#each generated_test_results}}
-                               {{#if (eq this.status "pass")}}
-                               Success: {{this.message}}. Congratulations, no errors detected!
-                               {{else if (eq this.error "SyntaxError")}}
-                               Syntax Error Detected: {{this.message}}. Please check your syntax.
-                               {{else if (eq this.error "Timeout")}}
-                               Timeout Error: {{this.message}}. Consider optimizing your code for better performance.
-                               {{else if (eq this.error "RuntimeError")}}
-                               Runtime Error: {{this.message}}. Ensure all variables are defined and accessible.
-                               {{else if (eq this.error "TypeError")}}
-                               Type Error: {{this.message}}. Verify that your data types are correct.
-                               {{else}}
-                               Unknown Error: {{this.message}}. Review the code for potential issues.
+                           {{#each res in await model.item.generated_test_results}}
+                               - Test Result: {{scope.index}} -
+                               {{#if await res.status == "pass"}}
+                               Success: {{await res.message}}. Congratulations, no errors detected!
+                               {{#elseif await res.error == "SyntaxError"}}
+                               Syntax Error Detected: {{await res.message}}. Please check your syntax.
+                               {{#elseif await res.error == "Timeout"}}
+                               Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
+                               {{#elseif await res.error == "RuntimeError"}}
+                               Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
+                               {{#elseif await res.error == "TypeError"}}
+                               Type Error: {{await res.message}}. Verify that your data types are correct.
+                               {{#else}}
+                               Unknown Error: {{await res.message}}. Review the code for potential issues.
                                {{/if}}
                            {{/each}}
                            `,
@@ -1320,6 +1237,18 @@ If you encountered no errors, say "No errors encountered."`,
                     },
                 ],
             },
+        },
+        {
+            type: "message",
+            role: "system",
+            content: `All challenges have been completed.
+            {{#each challenge in await model.$.challenges}}
+            Challenge: {{await challenge.name}}
+            {{#each res in await challenge.public_test_results}}
+            - Test Result: {{scope.index}} - {{await res.status}}
+            {{/each}}
+            {{/each}}
+            `,
         },
         //we run a prompt on all the summaries, asking to give us the overall results (computed from the $ object) and any patterns emerging from the summaries as a whole.
     ],
@@ -1574,16 +1503,11 @@ const bookWritingFlow = {
 // console.log(await cres.blackboard.summary);
 
 const codiumres = await executeDSPL(codium);
-const summaries = await codiumres.blackboard.challenges.then((c) =>
-    Promise.all(c.map(async (ch) => await ch._obj))
-);
-console.log(summaries);
-
-await Deno.writeTextFile(
-    "./dspl/test/results.json",
-    JSON.stringify(summaries, null, 2)
-);
-console.log("File written to ./dspl/test/results.json");
+console.log(await codiumres.history.slice(-1).pop().content);
+codiumres.blackboard.challenges.then(async (challenges) => {
+    const publicTestResults = await challenges[0].public_test_results;
+    console.log(publicTestResults);
+});
 // const sgptres = await executeDSPL(smartgpt);
 // console.log(await sgptres.blackboard.aiAnswer);
 
