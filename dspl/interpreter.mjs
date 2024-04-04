@@ -263,10 +263,10 @@ const elementModules = {
             let lastContext = context;
 
             const executeElement = async (item) => {
-                item.$ = context.blackboard.$;
                 let loopContext = {
                     history: JSON.parse(JSON.stringify(lastContext.history)),
-                    blackboard: item,
+                    blackboard: context.blackboard,
+                    item,
                 };
 
                 console.log(
@@ -515,19 +515,39 @@ async function executeStep(
     }
 
     // Resolve blackboard references in element configurations deeply
-    const extractPropertiesFromBlackboard = async (blackboard, template) => {
+    const extractPropertiesFromBlackboard = async (
+        blackboard,
+        item,
+        template
+    ) => {
         const props = extractPropertiesFromTemplate(template);
-        const resolvedProps = {};
+        const resolvedProps = {
+            $: {},
+            item: {},
+        };
         for (const prop of props) {
-            resolvedProps[prop] = await blackboard[prop];
+            const [key, path] = prop.split(".");
+            if (!path) {
+                resolvedProps[key] = await blackboard[key];
+            } else {
+                resolvedProps[key] = resolvedProps[key] || {};
+                resolvedProps[key][path] =
+                    key === "$" ? await blackboard[path] : await item[path];
+            }
+
+            if (key === "item") {
+                console.log("Item:", key, path, item, resolvedProps[key]);
+                // Deno.exit();
+                // console.log(await blackboard._obj);
+            }
         }
-        resolvedProps.$ = await blackboard.$;
+
         return resolvedProps;
     };
 
-    const resolveBlackboardReferences = async (value, blackboard) => {
+    const resolveBlackboardReferences = async (value, blackboard, item) => {
         if (typeof value === "function") {
-            return value(await blackboard._obj);
+            return value(await blackboard._obj, item._obj || item || {});
         }
         const reservedKeys = [
             "overrides",
@@ -539,6 +559,7 @@ async function executeStep(
         ];
         const properties = await extractPropertiesFromBlackboard(
             blackboard,
+            item,
             value
         );
 
@@ -547,8 +568,8 @@ async function executeStep(
             return template(properties);
         } else if (Array.isArray(value)) {
             return Promise.all(
-                value.map((item) =>
-                    resolveBlackboardReferences(item, blackboard)
+                value.map((v) =>
+                    resolveBlackboardReferences(v, blackboard, item)
                 )
             );
         } else if (value !== null && typeof value === "object") {
@@ -557,7 +578,8 @@ async function executeStep(
                 if (!reservedKeys.includes(key)) {
                     resolvedObject[key] = await resolveBlackboardReferences(
                         val,
-                        blackboard
+                        blackboard,
+                        item
                     );
                 } else {
                     resolvedObject[key] = val;
@@ -571,7 +593,8 @@ async function executeStep(
 
     const resolvedElementData = await resolveBlackboardReferences(
         elementData,
-        context.blackboard
+        context.blackboard,
+        context.item
     );
     const originalHistoryLength = context.history.length; //xw + 1; //FIXME, this is a hack to get the length of the history before the element is executed
     context = await elementModule.execute(resolvedElementData, context, {
@@ -1052,7 +1075,7 @@ const codium = {
                 {
                     type: "message",
                     role: "user",
-                    content: "{{description}}",
+                    content: "{{item.description}}",
                 },
                 {
                     type: "prompt",

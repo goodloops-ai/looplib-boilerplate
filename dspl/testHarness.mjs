@@ -2,8 +2,9 @@ import filenamify from "filenamify";
 
 const timestamp = new Date().getTime();
 const nonce = Math.floor(Math.random() * 1000000);
-
-export const runTests = async (
+const testQueue = [];
+let isRunning = false;
+export const runTestsInternal = async (
     code,
     tests,
     { breakOnFailure = false } = {}
@@ -125,4 +126,25 @@ export const runTests = async (
 
     // console.log("RESULTS", total_results);
     return total_results;
+};
+// Function to process the next job in the queue
+async function processNextJob() {
+    if (isRunning || testQueue.length === 0) {
+        return;
+    }
+    isRunning = true;
+    const nextJob = testQueue.shift();
+    const { code, tests, options } = nextJob;
+    const results = await runTestsInternal(code, tests, options);
+    nextJob.resolve(results);
+    isRunning = false;
+    processNextJob();
+}
+
+// The modified runTests function adds jobs to the queue and starts processing
+export const runTests = async (code, tests, options) => {
+    return await new Promise((resolve, reject) => {
+        testQueue.push({ code, tests, options, resolve, reject });
+        processNextJob();
+    });
 };
