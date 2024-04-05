@@ -620,10 +620,19 @@ const guardModules = {
         };
     },
     function: async (context, guard) => {
-        const { success, message } = await new Function(
-            "response",
-            `return ${guard.filter}`
-        )(context.response);
+        try {
+            const res = await new Function(
+                "response",
+                "item",
+                "$",
+                `${guard.filter}`
+            )(context.response, context.item, context.blackboard);
+            console.log("FILTER FUNCTION", res, guard);
+            return res;
+        } catch (error) {
+            console.error("Error executing function guard:", error, guard);
+            return { success: false, message: "Error executing function!" };
+        }
     },
 };
 
@@ -682,7 +691,7 @@ async function executeStep(
                 value,
                 template,
                 blackboard,
-                await item?.description
+                await blackboard?.description
             );
             return await template({ $: blackboard, item: item });
         } else if (Array.isArray(value)) {
@@ -739,7 +748,8 @@ async function executeStep(
     if (parse) {
         for (const [variableName, path] of Object.entries(parse)) {
             const [bucket, key] = path.split(".");
-            context[bucket][key] = context.response[variableName];
+            const _b = bucket === "$" ? "blackboard" : bucket;
+            context[_b][key] = context.response[variableName];
         }
     }
 
@@ -1047,7 +1057,7 @@ const singlechallenge = {
         {
             type: "message",
             role: "user",
-            content: "{{description}}",
+            content: "{{model.$.description}}",
         },
         {
             type: "prompt",
@@ -1563,6 +1573,105 @@ const bookWritingFlow = {
     ],
 };
 
+const singleChallengeWithPlan = {
+    elements: [
+        {
+            type: "import",
+            import: {
+                runTests: "./testHarness.mjs",
+            },
+        },
+        {
+            type: "init",
+            init: {
+                $: {
+                    prompt: {
+                        model: "gpt-4-0125-preview",
+                        temperature: 0.3,
+                    },
+                },
+                index: 0,
+                name: "1573_C",
+                description:
+                    "You are given a book with n chapters.\n\nEach chapter has a specified list of other chapters that need to be understood in order to understand this chapter. To understand a chapter, you must read it after you understand every chapter on its required list.\n\nCurrently you don't understand any of the chapters. You are going to read the book from the beginning till the end repeatedly until you understand the whole book. Note that if you read a chapter at a moment when you don't understand some of the required chapters, you don't understand this chapter.\n\nDetermine how many times you will read the book to understand every chapter, or determine that you will never understand every chapter no matter how many times you read the book.\n\nInput\n\nEach test contains multiple test cases. The first line contains the number of test cases t (1 ≤ t ≤ 2⋅10^4).\n\nThe first line of each test case contains a single integer n (1 ≤ n ≤ 2⋅10^5) — number of chapters.\n\nThen n lines follow. The i-th line begins with an integer k_i (0 ≤ k_i ≤ n-1) — number of chapters required to understand the i-th chapter. Then k_i integers a_{i,1}, a_{i,2}, ..., a_{i, k_i} (1 ≤ a_{i, j} ≤ n, a_{i, j} ≠ i, a_{i, j} ≠ a_{i, l} for j ≠ l) follow — the chapters required to understand the i-th chapter.\n\nIt is guaranteed that the sum of n and sum of k_i over all testcases do not exceed 2⋅10^5.\n\nOutput\n\nFor each test case, if the entire book can be understood, print how many times you will read it, otherwise print -1.\n\nExample\n\nInput\n\n\n5\n4\n1 2\n0\n2 1 4\n1 2\n5\n1 5\n1 1\n1 2\n1 3\n1 4\n5\n0\n0\n2 1 2\n1 2\n2 2 1\n4\n2 2 3\n0\n0\n2 3 2\n5\n1 2\n1 3\n1 4\n1 5\n0\n\n\nOutput\n\n\n2\n-1\n1\n2\n5\n\nNote\n\nIn the first example, we will understand chapters \\{2, 4\\} in the first reading and chapters \\{1, 3\\} in the second reading of the book.\n\nIn the second example, every chapter requires the understanding of some other chapter, so it is impossible to understand the book.\n\nIn the third example, every chapter requires only chapters that appear earlier in the book, so we can understand everything in one go.\n\nIn the fourth example, we will understand chapters \\{2, 3, 4\\} in the first reading and chapter 1 in the second reading of the book.\n\nIn the fifth example, we will understand one chapter in every reading from 5 to 1.",
+                public_tests: [
+                    {
+                        input: "5\n4\n1 2\n0\n2 1 4\n1 2\n5\n1 5\n1 1\n1 2\n1 3\n1 4\n5\n0\n0\n2 1 2\n1 2\n2 2 1\n4\n2 2 3\n0\n0\n2 3 2\n5\n1 2\n1 3\n1 4\n1 5\n0\n",
+                        output: "2\n-1\n1\n2\n5\n",
+                    },
+                ],
+                public_test_results: {
+                    get: ({ public_tests, code }) =>
+                        runTests(code, public_tests) || [],
+                },
+                public_tests_passed: {
+                    get: ({ public_test_results }) =>
+                        public_test_results?.length &&
+                        public_test_results.every(
+                            (test) => test.status === "pass"
+                        ),
+                },
+            },
+        },
+        {
+            type: "message",
+            role: "system",
+            content:
+                "You are a top-rated code assistant based on a cutting-edge version of GPT, with far greater capabilities than any prior GPT model. You always return code when requested, and always pay the closest attention to instructions and other elements pointed to by the prompt. You never return partial code, never give up, and never refuse to return code.",
+        },
+        {
+            type: "message",
+            role: "user",
+            content: "{{model.$.description}}",
+        },
+        {
+            type: "prompt",
+            content:
+                "Given the programming challenge, provide a clear, step-by-step plan to solve it. Break down the problem into smaller, manageable tasks. Ensure that your plan covers all the necessary aspects, including input parsing, problem-specific logic, edge case handling, and output formatting. Be as detailed and specific as possible in your planning.",
+            set: "plan",
+        },
+        {
+            type: "prompt",
+            content:
+                "Execute the first step of the plan you created to solve the programming challenge. If you need to test any code snippets, provide them as an immediately invoked function expression (IIFE). If you have a complete solution, respond with it in the 'code' property of your response object. Remember to adhere to the rules and constraints specified earlier.",
+            parse: {
+                code: "$.code",
+            },
+        },
+        {
+            type: "do",
+            while: {
+                type: "function",
+                filter: "{ success: !(await $.public_tests_passed) }",
+            },
+            dspl: {
+                elements: [
+                    {
+                        type: "prompt",
+                        content:
+                            "Continue working on the solution. If you would like to test a code snippet, provide an IIFE function. If you would like to provide a complete solution, respond with it in the 'code' property.",
+                        parse: {
+                            code: "$.code",
+                        },
+                    },
+                ],
+            },
+        },
+        {
+            type: "message",
+            role: "user",
+            content:
+                "Total test results {{public_tests_passed}}: {{#each public_test_results}}{{this.status}}{{#unless @last}}, {{/unless}}{{/each}}",
+        },
+        {
+            type: "prompt",
+            set: "summary",
+            content:
+                "We are now done with this challenge.\nState the challenge name and index. List the various tries, the result (success, partial, fail) of each, and what changed between the versions. Success means all tests passed, partial success means all public tests passed, and fail means all public tests did not pass. For each try, give the numbers of each type of test that was passed.\n\nThen, briefly list the errors you encountered and classify their types (e.g., syntax error, runtime error, etc.) and what you (or should have done) to resolve them. Do not mention challenge-specific details, just general code generation strategy issues. Then provide any changes that should be made to the initial code generation prompts or any of the subsequent prompts.\nIf you encountered no errors, say 'No errors encountered.'",
+        },
+    ],
+};
+
 // // Execute the DSPL flow
 // executeDSPL(bookWritingFlow)
 //     .then((context) => {
@@ -1591,204 +1700,20 @@ const bookWritingFlow = {
 // const cres = await executeDSPL(singlechallenge);
 // console.log(await cres.blackboard.summary);
 
-const codiumres = await executeDSPL(codium);
-console.log(await codiumres.history.slice(-1).pop().content);
-codiumres.blackboard.challenges.then(async (challenges) => {
-    const publicTestResults = await challenges[0].public_test_results;
-    console.log(publicTestResults);
-});
+const singlePlan = await executeDSPL(singleChallengeWithPlan);
+console.log(
+    await singlePlan.blackboard.summary,
+    JSON.stringify(singlePlan.history, null, 2)
+);
+
+// const codiumres = await executeDSPL(codium);
+// console.log(await codiumres.history.slice(-1).pop().content);
+// codiumres.blackboard.challenges.then(async (challenges) => {
+//     const publicTestResults = await challenges[0].public_test_results;
+//     console.log(publicTestResults);
+// });
 // const sgptres = await executeDSPL(smartgpt);
 // console.log(await sgptres.blackboard.aiAnswer);
 
 // const shaikures = await executeDSPL(shaiku);
 // console.log(await shaikures.blackboard.haiku);
-
-/**
- * 
- * !pip install EbookLib
-
-import time
-import re
-import os
-from ebooklib import epub
-import base64
-import requests
-import json
-
-ANTHROPIC_API_KEY = "YOUR KEY HERE"
-stability_api_key = "YOUR KEY HERE" # get it at https://beta.dreamstudio.ai/
-
-def remove_first_line(test_string):
-    if test_string.startswith("Here") and test_string.split("\n")[0].strip().endswith(":"):
-        return re.sub(r'^.*\n', '', test_string, count=1)
-    return test_string
-
-def generate_text(prompt, model="gpt-4-0125-preview", max_tokens=2000, temperature=0.7):
-    headers = {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
-    }
-    data = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "system": "You are a world-class author. Write the requested content with great skill and attention to detail.",
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data)
-    response_text = response.json()['content'][0]['text']
-    return response_text.strip()
-
-def generate_cover_prompt(plot):
-    response = generate_text(f"Plot: {plot}\n\n--\n\nDescribe the cover we should create, based on the plot. This should be two sentences long, maximum.")
-    return response
-
-def generate_title(plot):
-    response = generate_text(f"Here is the plot for the book: {plot}\n\n--\n\nRespond with a great title for this book. Only respond with the title, nothing else is allowed.")
-    return remove_first_line(response)
-
-def create_cover_image(plot):
-
-  plot = str(generate_cover_prompt(plot))
-
-  engine_id = "stable-diffusion-xl-beta-v2-2-2"
-  api_host = os.getenv('API_HOST', 'https://api.stability.ai')
-  api_key = stability_api_key
-
-  if api_key is None:
-      raise Exception("Missing Stability API key.")
-
-  response = requests.post(
-      f"{api_host}/v1/generation/{engine_id}/text-to-image",
-      headers={
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "Authorization": f"Bearer {api_key}"
-      },
-      json={
-          "text_prompts": [
-              {
-                  "text": plot
-              }
-          ],
-          "cfg_scale": 7,
-          "clip_guidance_preset": "FAST_BLUE",
-          "height": 768,
-          "width": 512,
-          "samples": 1,
-          "steps": 30,
-      },
-  )
-
-  if response.status_code != 200:
-      raise Exception("Non-200 response: " + str(response.text))
-
-  data = response.json()
-
-  for i, image in enumerate(data["artifacts"]):
-      with open(f"/content/cover.png", "wb") as f: # replace this if running locally, to where you store the cover file
-          f.write(base64.b64decode(image["base64"]))
-
-def generate_chapter_title(chapter_content):
-    response = generate_text(f"Chapter Content:\n\n{chapter_content}\n\n--\n\nGenerate a concise and engaging title for this chapter based on its content. Respond with the title only, nothing else.")
-    return remove_first_line(response)
-
-def create_epub(title, author, chapters, cover_image_path='cover.png'):
-    book = epub.EpubBook()
-    # Set metadata
-    book.set_identifier('id123456')
-    book.set_title(title)
-    book.set_language('en')
-    book.add_author(author)
-    # Add cover image
-    with open(cover_image_path, 'rb') as cover_file:
-        cover_image = cover_file.read()
-    book.set_cover('cover.png', cover_image)
-    # Create chapters and add them to the book
-    epub_chapters = []
-    for i, chapter_content in enumerate(chapters):
-        chapter_title = generate_chapter_title(chapter_content)
-        chapter_file_name = f'chapter_{i+1}.xhtml'
-        epub_chapter = epub.EpubHtml(title=chapter_title, file_name=chapter_file_name, lang='en')
-        # Add paragraph breaks
-        formatted_content = ''.join(f'<p>{paragraph.strip()}</p>' for paragraph in chapter_content.split('\n') if paragraph.strip())
-        epub_chapter.content = f'<h1>{chapter_title}</h1>{formatted_content}'
-        book.add_item(epub_chapter)
-        epub_chapters.append(epub_chapter)
-
-
-    # Define Table of Contents
-    book.toc = (epub_chapters)
-
-    # Add default NCX and Nav files
-    book.add_item(epub.EpubNcx())
-    book.add_item(epub.EpubNav())
-
-    # Define CSS style
-    style = '''
-    @namespace epub "http://www.idpf.org/2007/ops";
-    body {
-        font-family: Cambria, Liberation Serif, serif;
-    }
-    h1 {
-        text-align: left;
-        text-transform: uppercase;
-        font-weight: 200;
-    }
-    '''
-
-    # Add CSS file
-    nav_css = epub.EpubItem(uid="style_nav", file_name="style/nav.css", media_type="text/css", content=style)
-    book.add_item(nav_css)
-
-    # Create spine
-    book.spine = ['nav'] + epub_chapters
-
-    # Save the EPUB file
-    epub.write_epub(f'{title}.epub', book)
-
-
-def generate_book(writing_style, book_description, num_chapters):
-    print("Generating plot outline...")
-    plot_prompt = f"Create a detailed plot outline for a {num_chapters}-chapter book in the {writing_style} style, based on the following description:\n\n{book_description}\n\nEach chapter should be at least 10 pages long."
-    plot_outline = generate_text(plot_prompt)
-    print("Plot outline generated.")
-
-    chapters = []
-    for i in range(num_chapters):
-        print(f"Generating chapter {i+1}...")
-        chapter_prompt = f"Previous Chapters:\n\n{' '.join(chapters)}\n\nWriting style: `{writing_style}`\n\nPlot Outline:\n\n{plot_outline}\n\nWrite chapter {i+1} of the book, ensuring it follows the plot outline and builds upon the previous chapters. The chapter should be at least 256 paragraphs long... we're going for lengthy yet exciting chapters here."
-        chapter = generate_text(chapter_prompt, max_tokens=4000)
-        chapters.append(remove_first_line(chapter))
-        print(f"Chapter {i+1} generated.")
-        time.sleep(1)  # Add a short delay to avoid hitting rate limits
-
-    print("Compiling the book...")
-    book = "\n\n".join(chapters)
-    print("Book generated!")
-
-    return plot_outline, book, chapters
-
-# User input
-writing_style = input("Enter the desired writing style: ")
-book_description = input("Enter a high-level description of the book: ")
-num_chapters = int(input("Enter the number of chapters: "))
-
-# Generate the book
-plot_outline, book, chapters = generate_book(writing_style, book_description, num_chapters)
-
-title = generate_title(plot_outline)
-
-# Save the book to a file
-with open(f"{title}.txt", "w") as file:
-    file.write(book)
-
-create_cover_image(plot_outline)
-
-# Create the EPUB file
-create_epub(title, 'AI', chapters, '/content/cover.png')
-
-print(f"Book saved as '{title}.txt'.")
-
-**/
