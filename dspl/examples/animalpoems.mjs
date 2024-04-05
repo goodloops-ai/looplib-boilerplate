@@ -15,8 +15,10 @@ const poemdspl = {
             type: "prompt",
             mode: "json",
             content:
-                "give me a list of animals, one for each letter of the alphabet, each starting with the letter of the alphabet it corresponds to.",
-            set: "animals",
+                "give me an array of animals, one for each letter of the alphabet, each starting with the letter of the alphabet it corresponds to. put it in the 'animals' key in your response, with each object having a 'letter' and 'animal' property",
+            parse: {
+                animals: "$.animals",
+            },
         },
         {
             type: "do",

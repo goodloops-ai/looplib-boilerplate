@@ -23,7 +23,7 @@ const bookWritingFlow = {
         {
             type: "prompt",
             content:
-                "Create a detailed plot outline for a {{numChapters}}-chapter book in the {{writingStyle}} style, based on the following description:\n\n{{bookDescription}}\n\nEach chapter should be at least 10 pages long.",
+                "Create a detailed plot outline for a {{await model.$.numChapters}}-chapter book in the {{await model.$.writingStyle}} style, based on the following description:\n\n{{await model.$.bookDescription}}\n\nEach chapter should be at least 10 pages long.",
             set: "plotOutline",
         },
         {
@@ -34,7 +34,7 @@ const bookWritingFlow = {
                 {
                     type: "prompt",
                     content:
-                        "Write chapter {{index}} of the book, ensuring it follows the plot outline and builds upon the previous chapters (if any).",
+                        "Write chapter {{await model.item.index}} of the book, ensuring it follows the plot outline and builds upon the previous chapters (if any).",
                     max_tokens: 4000,
                     set: "chapter",
                     parse: {

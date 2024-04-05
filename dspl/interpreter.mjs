@@ -260,7 +260,7 @@ const elementModules = {
                 };
 
                 try {
-                    await executeDSPL(clonedDspl, context);
+                    await executeDSPL(clonedDspl, childContext);
                 } catch (error) {
                     console.error("Error in child flow:", error);
                     childContext.history.push({
@@ -302,10 +302,12 @@ const elementModules = {
             };
 
             if (forConfig) {
+                //TODO: we need to fix array schemas
                 const { each, in: arrayName } = forConfig;
                 const array = await context.blackboard[arrayName];
                 const processedArray = await makeList(array, context, config);
 
+                console.log("Processed array:", processedArray);
                 for (const item of processedArray) {
                     // console.log("Loop item:", item);
                     // Deno.exit();
@@ -746,11 +748,7 @@ const makeList = async (
     file = "./dspl/test/toss.json"
 ) => {
     if (Array.isArray(input)) {
-        const $ = await context.blackboard._obj;
-        return input.map((item) => {
-            item.$ = $;
-            return item;
-        });
+        return input;
     }
     const prompt = {
         role: "user",
@@ -773,11 +771,10 @@ Ensure that the response is a valid JSON object, and each item in the array is a
         },
         file
     );
-    const response = res.slice(-1).pop().content.trim();
+    const response = res.slice(-1).pop().content.response;
 
     try {
-        const parsedResponse = JSON.parse(response);
-        return makeList(parsedResponse.data || [], context, config);
+        return makeList(response.data || [], context, config);
     } catch (error) {
         console.error("Error parsing JSON response:", error);
         return [];
