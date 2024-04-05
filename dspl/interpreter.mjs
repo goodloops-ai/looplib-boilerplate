@@ -7,6 +7,7 @@ import { dirname } from "https://deno.land/std/path/mod.ts";
 import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
 import epub from "https://deno.land/x/epubgen/mod.ts";
 import moe from "https://esm.sh/@toptensoftware/moe-js";
+import pLimit from "https://esm.sh/p-limit";
 
 globalThis.XMLSerializer = function () {
     return {
@@ -216,6 +217,8 @@ const elementModules = {
                 while: whileConfig,
             } = elementData;
 
+            forConfig.concurrency = forConfig.concurrency || 1;
+
             const clonedDspl = _.cloneDeepWith(dspl, (value) => {
                 if (typeof value === "function") {
                     return value;
@@ -251,6 +254,7 @@ const elementModules = {
             //         init: mergedValues,
             //     });
             // }
+            const limit = pLimit(forConfig.concurrency);
 
             const executeFlow = async (item) => {
                 let childContext = {
@@ -278,7 +282,15 @@ const elementModules = {
                     }
                 }
 
-                if (history === "hidden") {
+                if (history === "none" || forConfig.concurrency > 1) {
+                    const hiddenHistory = childContext.history.map(
+                        (message) => ({
+                            ...message,
+                            meta: { hidden: true },
+                        })
+                    );
+                    context.history.push(...hiddenHistory);
+                } else if (history === "hidden") {
                     const hiddenHistory = childContext.history
                         .slice(0, -1)
                         .map((message) => ({
@@ -308,11 +320,10 @@ const elementModules = {
                 const processedArray = await makeList(array, context, config);
 
                 console.log("Processed array:", processedArray);
-                for (const item of processedArray) {
-                    // console.log("Loop item:", item);
-                    // Deno.exit();
-                    await executeFlow(item);
-                }
+                const promises = processedArray.map((item) =>
+                    limit(() => executeFlow(item))
+                );
+                await Promise.all(promises);
             } else if (whileConfig) {
                 const { type, filter, max = 5 } = whileConfig;
                 const guardModule = guardModules[type];
@@ -472,12 +483,13 @@ const guardModules = {
             { response_format: { type: "json_object" } }
         );
 
-        const { success, message } = ratingContext.history.slice(-1).pop()
-            .content.response;
+        const { success, message, ...rest } = ratingContext.history
+            .slice(-1)
+            .pop().content.response;
 
         return {
             success,
-            message,
+            message: message || JSON.stringify(rest),
         };
     },
     filter: async (context, guard) => {
@@ -662,6 +674,11 @@ async function executeStep(
         }
 
         const { success, message } = await guardModule(context, guard);
+
+        if (!message) {
+            console.error("Guard failed to provide message:", guard, success);
+            Deno.exit();
+        }
 
         if (!success) {
             context.history.push({
