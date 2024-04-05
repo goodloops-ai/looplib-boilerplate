@@ -50,28 +50,57 @@ const singlechallenge = {
         {
             type: "message",
             role: "user",
-            content: "{{model.$.description}}",
+            content: "{{await model.$.description}}",
         },
         {
             type: "prompt",
-            retries: 1,
-            content:
-                "Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.\\nThe code:\\n- must be a standalone ECMAScript module with no dependencies.\\n- must have a function as the default export.\\n- must accept a single 'lines' argument (an array of input strings).\\n- must return a single array of output strings.\\n- must not mix BigInt and other types, must always use explicit conversions.\\n- should be commented to indicate which part of the code relates to which problem constraint.\\n- should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.\\n\\nIMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general, avoid making unwarranted assumptions about input on the basis of the test(s) you can see.\\n\\nConsider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.\n Put your code inside the 'code' property on your JSON response.",
+            retries: 2,
+            content: `Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.
+               The code:
+               - must be a standalone ECMAScript module with no dependencies.
+               - must have a function as the default export.
+               - must accept a single 'lines' argument (an array of input strings).
+               - must return a single array of output strings.
+               - must not mix BigInt and other types, must always use explicit conversions.
+               - should be commented to indicate which part of the code relates to which problem constraint.
+               - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
+              
+               IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general, avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
+              
+               Consider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.
+              
+               your response object must have the source code in the 'code' property.`,
             parse: {
                 code: "$.code",
             },
             guards: [
                 {
                     type: "filter",
-                    filter: "code",
+                    filter: "$.code",
                     policy: "retry",
                 },
                 {
                     type: "filter",
-                    filter: "public_tests_passed",
+                    policy: "append",
+                    filter: "$.public_tests_passed",
                     overrides: {
-                        content:
-                            "Here are the results of testing your code:\\n{{#each public_test_results}}\\n- Test Result: {{@index}} -\\n{{#if (eq this.status 'pass')}}\\nSuccess: {{this.message}}. Congratulations, no errors detected!\\n{{else if (eq this.error 'SyntaxError')}}\\nSyntax Error Detected: {{this.message}}. Please check your syntax.\\n{{else if (eq this.error 'Timeout')}}\\nTimeout Error: {{this.message}}. Consider optimizing your code for better performance.\\n{{else if (eq this.error 'RuntimeError')}}\\nRuntime Error: {{this.message}}. Ensure all variables are defined and accessible.\\n{{else if (eq this.error 'TypeError')}}\\nType Error: {{this.message}}. Verify that your data types are correct.\\n{{else}}\\nUnknown Error: {{this.message}}. Review the code for potential issues.\\n{{/if}}\\n{{/each}}. Provide a complete, fixed version of the code.",
+                        content: `Here are the results of testing your code:
+                            {{#each res in await model.$.public_test_results}}
+                               - Test Result: {{scope.index}} -
+                               {{#if await res.status == "pass"}}
+                               Success: {{await res.message}}. Congratulations, no errors detected!
+                               {{#elseif await res.error == "SyntaxError"}}
+                               Syntax Error Detected: {{await res.message}}. Please check your syntax.
+                               {{#elseif await res.error == "Timeout"}}
+                               Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
+                               {{#elseif await res.error == "RuntimeError"}}
+                               Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
+                               {{#elseif await res.error == "TypeError"}}
+                               Type Error: {{await res.message}}. Verify that your data types are correct.
+                               {{#else}}
+                               Unknown Error: {{await res.message}}. Review the code for potential issues.
+                               {{/if}}
+                           {{/each}}`,
                     },
                 },
             ],
@@ -79,7 +108,24 @@ const singlechallenge = {
                 {
                     type: "message",
                     role: "user",
-                    content: `total test results {{tests_passed}}: {{#each public_test_results}}{{this.status}}{{#unless @last}}, {{/unless}}{{/each}}`,
+                    content: `total test results {{await model.$.tests_passed}}: 
+
+                            {{#each res in await model.$.public_test_results}}
+                               - Test Result: {{scope.index}} -
+                               {{#if await res.status == "pass"}}
+                               Success: {{await res.message}}. Congratulations, no errors detected!
+                               {{#elseif await res.error == "SyntaxError"}}
+                               Syntax Error Detected: {{await res.message}}. Please check your syntax.
+                               {{#elseif await res.error == "Timeout"}}
+                               Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
+                               {{#elseif await res.error == "RuntimeError"}}
+                               Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
+                               {{#elseif await res.error == "TypeError"}}
+                               Type Error: {{await res.message}}. Verify that your data types are correct.
+                               {{#else}}
+                               Unknown Error: {{await res.message}}. Review the code for potential issues.
+                               {{/if}}
+                           {{/each}}`,
                 },
                 {
                     type: "prompt",
