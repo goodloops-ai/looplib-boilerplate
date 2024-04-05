@@ -547,7 +547,10 @@ async function executeStep(
 
     const resolveBlackboardReferences = async (value, blackboard, item) => {
         if (typeof value === "function") {
-            return value(await blackboard._obj, item._obj || item || {});
+            return value(
+                await blackboard._obj,
+                (await item?._obj) || item || {}
+            );
         }
         const reservedKeys = [
             "overrides",
