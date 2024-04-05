@@ -54,6 +54,9 @@ const llm = async (history, config, file) => {
         n = 1,
     } = config;
 
+    console.log(JSON.stringify(history, null, 2));
+    console.log("...running llm function...", JSON.stringify(config, null, 2));
+
     const model = response_format ? "gpt-4-0125-preview" : _model;
     if (model.startsWith("claude")) {
         let systemMessage = "";
@@ -90,7 +93,7 @@ const llm = async (history, config, file) => {
         });
 
         try {
-            console.log("Messages:", userMessages);
+            // console.log("Messages:", userMessages);
             const response = await anthropic.messages.create({
                 model,
                 temperature,
@@ -102,7 +105,7 @@ const llm = async (history, config, file) => {
             const responseText = response.content[0].text;
             // parse markdown codeblock
             const codeblock = responseText.match(/```json\n([\s\S]*?)\n```/);
-            console.log("Response:", responseText, codeblock?.[1]);
+            // console.log("Response:", responseText, codeblock?.[1]);
             const codeblockWithNoNewLines = codeblock?.[1];
             // Deno.exit();
             const assistantMessages = [
@@ -115,7 +118,7 @@ const llm = async (history, config, file) => {
             ];
 
             const newHistory = [...history, ...assistantMessages];
-            console.log("New history:", JSON.stringify(newHistory, null, 2));
+            console.log("LATEST:", JSON.stringify(newHistory, null, 2));
             // Deno.exit();
             return newHistory;
         } catch (error) {
@@ -146,7 +149,7 @@ const llm = async (history, config, file) => {
         });
 
         try {
-            console.log("Messages:", messages);
+            // console.log("Messages:", messages);
             const response = await openai.chat.completions.create({
                 model,
                 temperature,
@@ -158,14 +161,15 @@ const llm = async (history, config, file) => {
                 n,
             });
 
-            console.log("Response:", response);
+            // console.log("Response:", response);
             const assistantMessages = response.choices.map(({ message }) => {
                 message.content = JSON.parse(message.content);
                 return message;
             });
 
             const newHistory = [...history, ...assistantMessages];
-            console.log("New history:", newHistory);
+            // console.log("New history:", newHistory);
+            console.log("LATEST:", JSON.stringify(newHistory, null, 2));
             return newHistory;
         } catch (error) {
             console.error("Error in llm function:", error);
@@ -184,7 +188,7 @@ const elementModules = {
     },
     prompt: {
         async execute({ content, ...config }, context) {
-            console.log("Prompt content:", content);
+            // console.log("Prompt content:", content);
 
             const processedContent = await moe.compile(content, {
                 asyncTemplate: true,
@@ -287,7 +291,7 @@ const elementModules = {
                         childContext.history[childContext.history.length - 1]
                     );
                 } else if (history === "flat") {
-                    console.log("FLAT HISTORY");
+                    // console.log("FLAT HISTORY");
                     context.history.push(
                         ...childContext.history.slice(context.history.length)
                     );
@@ -304,7 +308,7 @@ const elementModules = {
                 const processedArray = await makeList(array, context, config);
 
                 for (const item of processedArray) {
-                    console.log("Loop item:", item);
+                    // console.log("Loop item:", item);
                     // Deno.exit();
                     await executeFlow(item);
                 }
@@ -322,7 +326,7 @@ const elementModules = {
                     const { success } = await guardModule(context, { filter });
 
                     if (!success) {
-                        console.log("Guard failed, breaking out of loop");
+                        // console.log("Guard failed, breaking out of loop");
                         break;
                     }
                     await executeFlow();
@@ -579,7 +583,7 @@ const elementModules = {
     // },
     message: {
         async execute({ role, content }, context) {
-            console.log("Message content:", content);
+            // console.log("Message content:", content);
             context.history.push({ role, content });
             return context;
         },
@@ -620,12 +624,12 @@ const guardModules = {
         };
     },
     filter: async (context, guard) => {
-        console.log("Filter guard:", guard.filter);
+        // console.log("Filter guard:", guard.filter);
         const [bucket, key] = guard.filter.split(".");
         const _b = bucket === "$" ? "blackboard" : bucket;
         const pass = await context[_b][key];
 
-        console.log("Filter guard:", guard.filter, pass);
+        // console.log("Filter guard:", guard.filter, pass);
         return {
             success: pass,
             message: pass
@@ -641,7 +645,7 @@ const guardModules = {
                 "$",
                 `return (async () => (${guard.filter}))()`
             )(context.response, context.item, context.blackboard);
-            console.log("FILTER FUNCTION", res, guard);
+            // console.log("FILTER FUNCTION", res, guard);
             return res;
         } catch (error) {
             console.error("Error executing function guard:", error, guard);
@@ -664,8 +668,8 @@ async function executeDSPL(
         context = await executeStep(element, context);
     }
 
-    console.log("DSPL execution completed successfully!");
-    console.log("Final context:", context);
+    // console.log("DSPL execution completed successfully!");
+    // console.log("Final context:", context);
     return context;
 }
 
@@ -701,13 +705,13 @@ async function executeStep(
 
         if (typeof value === "string") {
             const template = moe.compile(value, { asyncTemplate: true });
-            console.log(
-                "Template:",
-                value,
-                template,
-                blackboard,
-                await blackboard?.description
-            );
+            // console.log(
+            //     "Template:",
+            //     value,
+            //     template,
+            //     blackboard,
+            //     await blackboard?.description
+            // );
             return await template({ $: blackboard, item: item });
         } else if (Array.isArray(value)) {
             return Promise.all(
@@ -752,18 +756,18 @@ async function executeStep(
     context.history = newContext.history;
 
     const response = context.history.slice(-1).pop()?.content;
-    console.log("Element response:", JSON.stringify(response, null, 2));
+    // console.log("Element response:", JSON.stringify(response, null, 2));
 
     if (typeof response === "object") {
         if (response.function) {
             const functionResponse = await new Function(
                 `return ${response.function}`
             )();
-            console.log(
-                "Function response:",
-                functionResponse,
-                response.function
-            );
+            // console.log(
+            //     "Function response:",
+            //     functionResponse,
+            //     response.function
+            // );
             response.response = functionResponse;
         }
     }
@@ -776,19 +780,18 @@ async function executeStep(
             const _b = bucket === "$" ? "blackboard" : bucket;
             const oldValue = await context[_b][key];
             const newValue = context.response[variableName] || oldValue;
-            context[_b][key] =
-                context.response[variableName] || (await context[_b][key]);
+            context[_b][key] = newValue;
 
-            console.log(
-                "!!!!!!Parsed variable:",
-                variableName,
-                path,
-                _b,
-                key,
-                oldValue,
-                newValue,
-                await context[_b][key]
-            );
+            // console.log(
+            //     "!!!!!!Parsed variable:",
+            //     variableName,
+            //     path,
+            //     _b,
+            //     key,
+            //     oldValue,
+            //     newValue,
+            //     await context[_b][key]
+            // );
         }
     }
 
@@ -801,7 +804,7 @@ async function executeStep(
         context.blackboard[set] = context.history.slice(-1).pop().content;
     }
 
-    console.log("Element execution completed successfully!", context);
+    // console.log("Element execution completed successfully!", context);
     const responseGuards = response?.guards || [];
     const elementGuards = elementData.guards || [];
     const guards = [...responseGuards, ...elementGuards];
@@ -956,7 +959,7 @@ ${input}
 Ensure that the response is a valid JSON object, and each item in the array is an object. If the input is not an array, wrap it in an array before returning the JSON object.`,
     };
 
-    console.log("makeList prompt", prompt, context, config, file);
+    // console.log("makeList prompt", prompt, context, config, file);
 
     const res = await llm(
         [...context.history, prompt],
@@ -1700,7 +1703,7 @@ const singleChallengeWithPlan = {
             while: {
                 type: "function",
                 filter: "{ success: !(await $.public_tests_passed) }",
-                max: 10,
+                max: 20,
             },
             history: "flat",
             dspl: {
@@ -1775,12 +1778,12 @@ const singleChallengeWithPlan = {
 // const cres = await executeDSPL(singlechallenge);
 // console.log(await cres.blackboard.summary);
 
-const singlePlan = await executeDSPL(singleChallengeWithPlan);
-console.log(
-    await singlePlan.blackboard.code,
-    await singlePlan.blackboard.public_test_results,
-    JSON.stringify(singlePlan.history, null, 2)
-);
+// const singlePlan = await executeDSPL(singleChallengeWithPlan);
+// console.log(
+//     await singlePlan.blackboard.code,
+//     await singlePlan.blackboard.public_test_results,
+//     JSON.stringify(singlePlan.history, null, 2)
+// );
 
 // const codiumres = await executeDSPL(codium);
 // console.log(await codiumres.history.slice(-1).pop().content);
@@ -1793,3 +1796,5 @@ console.log(
 
 // const shaikures = await executeDSPL(shaiku);
 // console.log(await shaikures.blackboard.haiku);
+
+export default executeDSPL;

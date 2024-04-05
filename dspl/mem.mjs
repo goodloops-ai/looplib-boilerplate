@@ -95,7 +95,7 @@ export function mem(def) {
         if (!memoizers[key]) return;
         const _deps = deps[key];
         if (_deps) {
-            console.log("resolveDeps", key, _deps);
+            // console.log("resolveDeps", key, _deps);
             try {
                 for (const dep of _deps) {
                     resolveDeps(arg, dep);
@@ -125,7 +125,7 @@ export function mem(def) {
             obj = Object.assign(obj, partial);
 
             if (key === "code") {
-                console.log("MEM SET", nonce, key, value, obj);
+                // console.log("MEM SET", nonce, key, value, obj);
             }
             // obj = fn(obj);
             return true;
@@ -137,7 +137,7 @@ export function mem(def) {
 
             if (obj[key]?._mem) return obj[key];
             if (key === "code") {
-                console.log("MEM GET", nonce, key, obj);
+                // console.log("MEM GET", nonce, key, obj);
             }
             if (memoizers[key]) {
                 obj = resolveDeps(obj, key);
