@@ -6,7 +6,6 @@ import { ensureDir } from "https://deno.land/std/fs/mod.ts";
 import { dirname } from "https://deno.land/std/path/mod.ts";
 import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
 import epub from "https://deno.land/x/epubgen/mod.ts";
-import PQueue from "https://esm.sh/p-queue";
 import moe from "https://esm.sh/@toptensoftware/moe-js";
 
 globalThis.XMLSerializer = function () {
@@ -321,7 +320,7 @@ const elementModules = {
                 }
                 let i = 0;
 
-                while (i < max) {
+                while (i <= max) {
                     i++;
                     const { success } = await guardModule(context, { filter });
 
@@ -329,7 +328,9 @@ const elementModules = {
                         // console.log("Guard failed, breaking out of loop");
                         break;
                     }
-                    await executeFlow();
+                    if (i < max) {
+                        await executeFlow();
+                    }
                 }
             } else {
                 await executeFlow();
@@ -469,9 +470,8 @@ const guardModules = {
             { response_format: { type: "json_object" } }
         );
 
-        const { success, message } = JSON.parse(
-            ratingContext.history.slice(-1).pop().content.trim()
-        );
+        const { success, message } = ratingContext.history.slice(-1).pop()
+            .content.response;
 
         return {
             success,
@@ -636,26 +636,10 @@ async function executeStep(
             const oldValue = await context[_b][key];
             const newValue = context.response[variableName] || oldValue;
             context[_b][key] = newValue;
-
-            // console.log(
-            //     "!!!!!!Parsed variable:",
-            //     variableName,
-            //     path,
-            //     _b,
-            //     key,
-            //     oldValue,
-            //     newValue,
-            //     await context[_b][key]
-            // );
         }
     }
 
     if (set) {
-        // console.log(
-        //     "Setting variable:",
-        //     set,
-        //     context.history.slice(-1).pop().content
-        // );
         context.blackboard[set] = context.history.slice(-1).pop().content;
     }
 
