@@ -15,12 +15,12 @@ const sonnet = {
             type: "prompt",
             content: "write a sonnet about the moon",
             set: "sonnet",
+            retries: 3,
             guards: [
                 {
                     type: "llm",
                     filter: "Is the poem a 10/10?",
-                    recovery_prompt: "Improve the poem",
-                    retries: 3,
+                    policy: "append",
                 },
             ],
         },
