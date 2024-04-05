@@ -21,12 +21,35 @@ globalThis.DOMParser = DOMParser;
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
 await load({ export: true });
 
+const JSON_INSTRUCT = (md) => `Your response must be in JSON format ${
+    md ? "inside a markdown code block" : ""
+}, with no additional text.               
+Your root response must be an object with the following keys:
+reasoning: a brief exploration of your thought process.
+response: an object containing your response as per the users instructions. only ONE of response or function is allowed.
+function: a iife that returns a response object as per the users instruction. only ONE of response or function is allowed.
+guards: (optional) an array of objects containing the following keys:
+    - type: the type of guard, either "llm" or "filter" or "function"
+    - filter: the filter to be applied. 
+        - if the guard type is "llm", this is the prompt to be used to ask an llm whether the response is acceptable. 
+        - if the guard type is "filter", this is the key in the response object to be used as a boolean filter.
+        - if the guard type is "function", this is the iife to be used as a boolean filter. 
+            - It may assume that 'response' is in scope.
+            - It should return an object with a success boolean key and a message string.
+
+only ONE of response or function is allowed.
+Sometimes the user might have asked you to provide code: don't get confused by this, you should provide user requested code in a response object: The function should only be used if you decide you need to compute something to answer a user question, for instance if they ask you to compute the sum of an array of numbers, or if you need to test a piece of code before returning it.
+
+If the user made a specific mention of the way you should structure your data, interpret that as structure to be put into your 'response' object, either directly or in the shape of the object you return from a function.
+Make sure your JSON is valid, and that you have no additional text in your response.
+`;
+
 const llm = async (history, config, file) => {
     const {
         apiKey,
         model: _model,
         temperature,
-        max_tokens = 500,
+        max_tokens = 4000,
         response_format,
         n = 1,
     } = config;
@@ -34,25 +57,34 @@ const llm = async (history, config, file) => {
     const model = response_format ? "gpt-4-0125-preview" : _model;
     if (model.startsWith("claude")) {
         let systemMessage = "";
-        const userMessages = history
+        const mergedMessages = [];
+        let lastRole = null;
+
+        history
             .filter((item) => !Array.isArray(item))
             .filter((item) => item.meta?.hidden !== true)
-            .map(({ role, content }) => {
+            .forEach(({ role, content }) => {
                 if (role === "system") {
                     systemMessage += content + "\n";
-                    return null;
+                } else {
+                    content = !(typeof content === "string")
+                        ? JSON.stringify(content, null, 2)
+                        : content;
+
+                    if (role === lastRole && mergedMessages.length > 0) {
+                        mergedMessages[mergedMessages.length - 1].content +=
+                            "\n" + content;
+                    } else {
+                        mergedMessages.push({ role, content });
+                        lastRole = role;
+                    }
                 }
-                return { role, content };
-            })
-            .map(({ role, content }) => {
-                content = !(typeof content === "string")
-                    ? JSON.stringify(content, null, 2)
-                    : content;
+            });
 
-                return { role, content };
-            })
-            .filter(Boolean);
-
+        const userMessages = mergedMessages.map(({ role, content }) => ({
+            role,
+            content,
+        }));
         const anthropic = new Anthropic({
             apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
         });
@@ -64,22 +96,31 @@ const llm = async (history, config, file) => {
                 temperature,
                 max_tokens,
                 messages: userMessages,
-                system: `${systemMessage.trim()}\n Your response must be in JSON format inside a markdown code block, with no additional text`,
+                system: `${systemMessage.trim()}\n${JSON_INSTRUCT(true)}`,
             });
 
-            console.log("Response:", response);
+            const responseText = response.content[0].text;
+            // parse markdown codeblock
+            const codeblock = responseText.match(/```json\n([\s\S]*?)\n```/);
+            console.log("Response:", responseText, codeblock?.[1]);
+            const codeblockWithNoNewLines = codeblock?.[1];
+            // Deno.exit();
             const assistantMessages = [
                 {
                     role: "assistant",
-                    content: JSON.parse(response.content[0].text),
+                    content: codeblockWithNoNewLines
+                        ? new Function(`return ${codeblockWithNoNewLines}`)()
+                        : new Function(`return ${responseText}`)(),
                 },
             ];
 
             const newHistory = [...history, ...assistantMessages];
             console.log("New history:", JSON.stringify(newHistory, null, 2));
+            // Deno.exit();
             return newHistory;
         } catch (error) {
             console.error("Error in llm function:", error);
+            Deno.exit();
             return history;
         }
     } else {
@@ -96,8 +137,7 @@ const llm = async (history, config, file) => {
             })
             .concat({
                 role: "system",
-                content:
-                    "Your response must be in JSON format, with no additional text",
+                content: JSON_INSTRUCT(),
             });
 
         const openai = new OpenAI({
@@ -151,6 +191,7 @@ const elementModules = {
             })(context.blackboard);
             context.history.push({ role: "user", content: processedContent });
             context = await this.runLLM(context, config);
+
             return context;
         },
         async runLLM(context, config = {}) {
@@ -545,7 +586,7 @@ const guardModules = {
     llm: async (context, guard) => {
         const ratingPrompt = {
             role: "user",
-            content: `${guard.filter}\n respond with a json object with two keys, reasoning (a string explaining yourself) and pass: (true or false)`,
+            content: `${guard.filter}\n respond with a json object with two keys, message (a string explaining your reasoning and suggestions) and success: (true or false)`,
         };
         const ratingContext = await elementModules.prompt.runLLM(
             {
@@ -555,25 +596,34 @@ const guardModules = {
             { response_format: { type: "json_object" } }
         );
 
-        const { reasoning, pass } = JSON.parse(
+        const { success, message } = JSON.parse(
             ratingContext.history.slice(-1).pop().content.trim()
         );
 
-        console.log("Rating:", reasoning, pass);
-
         return {
-            success: pass,
-            message: reasoning,
+            success,
+            message,
         };
     },
     filter: async (context, guard) => {
-        const pass = await context.blackboard[guard.filter];
+        console.log("Filter guard:", guard.filter);
+        const [bucket, key] = guard.filter.split(".");
+        const _b = bucket === "$" ? "blackboard" : bucket;
+        const pass = await context[_b][key];
 
         console.log("Filter guard:", guard.filter, pass);
         return {
             success: pass,
-            message: pass ? "Guard condition met!" : "Guard condition failed.",
+            message: pass
+                ? "Guard condition met!"
+                : `${guard.filter} returned falsy value!`,
         };
+    },
+    function: async (context, guard) => {
+        const { success, message } = await new Function(
+            "response",
+            `return ${guard.filter}`
+        )(context.response);
     },
 };
 
@@ -671,12 +721,25 @@ async function executeStep(
         ...resolvedElementData,
     });
 
+    const response = context.history.slice(-1).pop()?.content;
+    console.log("Element response:", JSON.stringify(response, null, 2));
+
+    if (typeof response === "object") {
+        console.log("Element response:", JSON.stringify(response, null, 2));
+        if (response.function) {
+            const functionResponse = await new Function(
+                `return ${response.function}`
+            )();
+            response.response = functionResponse;
+        }
+    }
+
+    context.response = response?.response || response;
+
     if (parse) {
         for (const [variableName, path] of Object.entries(parse)) {
             const [bucket, key] = path.split(".");
-            context[bucket][key] = context.history.slice(-1).pop().content[
-                variableName
-            ];
+            context[bucket][key] = context.response[variableName];
         }
     }
 
@@ -690,80 +753,83 @@ async function executeStep(
     }
 
     console.log("Element execution completed successfully!", context);
+    const responseGuards = response?.guards || [];
+    const elementGuards = elementData.guards || [];
+    const guards = [...responseGuards, ...elementGuards];
 
     let guardFailed = false;
-    if (elementData.guards) {
-        for (const guard of elementData.guards) {
-            const guardModule = guardModules[guard.type];
+    for (const guard of guards) {
+        const guardModule = guardModules[guard.type];
 
-            if (!guardModule) {
-                throw new Error(`Unsupported guard type: ${guard.type}`);
-            }
+        if (!guardModule) {
+            throw new Error(`Unsupported guard type: ${guard.type}`);
+        }
 
-            const { success, message } = await guardModule(context, guard);
+        const { success, message } = await guardModule(context, guard);
 
-            if (!success) {
-                context.history.push({
-                    role: "system",
-                    content: message,
-                });
+        if (!success) {
+            context.history.push({
+                role: "user",
+                content: message,
+            });
 
-                if (retries > 0) {
-                    if (guard.policy === "retry") {
-                        context.history = context.history
-                            .slice(0, originalHistoryLength)
-                            .concat(
-                                context.history
-                                    .slice(originalHistoryLength)
-                                    .map((message) => {
-                                        if (!message.meta) {
-                                            message.meta = { hidden: true };
-                                        }
-                                        return message;
-                                    })
-                            );
-                        return await executeStep(
-                            {
-                                type,
-                                parse,
-                                set,
-                                ...elementData,
-                                ...guard.overrides,
-                                retries: retries - 1,
-                            },
-                            context,
-                            config,
-                            retries - 1
+            if (retries > 0) {
+                if (guard.policy === "retry") {
+                    context.history = context.history
+                        .slice(0, originalHistoryLength)
+                        .concat(
+                            context.history
+                                .slice(originalHistoryLength)
+                                .map((message) => {
+                                    if (!message.meta) {
+                                        message.meta = { hidden: true };
+                                    }
+                                    return message;
+                                })
                         );
-                    } else if (guard.overrides) {
-                        return await executeStep(
-                            {
-                                type,
-                                parse,
-                                set,
-                                ...elementData,
-                                ...guard.overrides,
-                                retries: retries - 1,
-                            },
+                    return await executeStep(
+                        {
+                            type,
+                            parse,
+                            set,
+                            ...elementData,
+                            retries: retries - 1,
+                        },
+                        context,
+                        config,
+                        retries - 1
+                    );
+                } else if (guard.policy === "append") {
+                    return await executeStep(
+                        {
+                            type,
+                            parse,
+                            set,
+                            ...elementData,
+                            ...(guard.overrides || {
+                                content:
+                                    "please try again in light of the feedback provided",
+                            }),
+                            retries: retries - 1,
+                        },
+                        context,
+                        config,
+                        retries - 1
+                    );
+                }
+            } else {
+                guardFailed = true;
+                if (elementData.onFail) {
+                    for (const failElement of elementData.onFail) {
+                        context = await executeStep(
+                            failElement,
                             context,
-                            config,
-                            retries - 1
+                            config
                         );
-                    }
-                } else {
-                    guardFailed = true;
-                    if (elementData.onFail) {
-                        for (const failElement of elementData.onFail) {
-                            context = await executeStep(
-                                failElement,
-                                context,
-                                config
-                            );
-                        }
                     }
                 }
-                break;
             }
+            break;
         }
     }
 
@@ -870,7 +936,7 @@ const sonnet = {
             init: {
                 $: {
                     prompt: {
-                        model: "gpt-3.5-turbo",
+                        model: "gpt-4-0125-preview",
                         temperature: 0.3,
                     },
                 },
@@ -1041,7 +1107,7 @@ const codium = {
             init: {
                 $: {
                     prompt: {
-                        model: "gpt-3.5-turbo",
+                        model: "gpt-4-0125-preview",
                         temperature: 0.3,
                     },
                 },
@@ -1158,20 +1224,25 @@ const codium = {
               
                Consider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.
               
-               Set your response to the 'code' property in your response JSON.`,
+               your response object must have the source code in the 'code' property.`,
                         parse: {
                             code: "item.code",
                         },
-                        retries: 0,
+                        retries: 3,
                         guards: [
                             {
                                 type: "filter",
-                                filter: "code",
+                                filter: "item.code",
                                 policy: "retry",
                             },
                             {
+                                type: "llm",
+                                filter: "the code property must be an ECMAScript module with the proper default export",
+                                policy: "append",
+                            },
+                            {
                                 type: "filter",
-                                filter: "public_tests_passed",
+                                filter: "item.public_tests_passed",
                                 policy: "retry",
                             },
                         ],
@@ -1552,7 +1623,7 @@ def remove_first_line(test_string):
         return re.sub(r'^.*\n', '', test_string, count=1)
     return test_string
 
-def generate_text(prompt, model="claude-3-haiku-20240307", max_tokens=2000, temperature=0.7):
+def generate_text(prompt, model="gpt-4-0125-preview", max_tokens=2000, temperature=0.7):
     headers = {
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
