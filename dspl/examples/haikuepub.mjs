@@ -5,7 +5,7 @@ const haikuEpubFlow = {
             init: {
                 $: {
                     prompt: {
-                        model: "claude-3-opus-20240229",
+                        model: "gpt-4-0125-preview",
                         temperature: 0.7,
                     },
                 },
@@ -14,14 +14,13 @@ const haikuEpubFlow = {
         {
             type: "prompt",
             content: "Write a haiku about a beautiful sunset.",
-            set: "haiku",
             parse: {
-                haiku: (response) => response.trim(),
+                haiku: "$.haiku",
             },
         },
         {
             type: "image",
-            prompt: "{{haiku}}",
+            prompt: "{{await model.$.haiku}}",
             imagePath: "./dspl/test/sunset_haiku.png",
             width: 512,
             height: 512,
@@ -38,7 +37,7 @@ const haikuEpubFlow = {
             chapters: [
                 {
                     title: "Sunset Haiku",
-                    content: "<p>{{haiku}}</p>",
+                    content: "<p>{{await model.$.haiku}}</p>",
                 },
             ],
             epubPath: "./dspl/test/sunset_haiku.epub",
