@@ -6,6 +6,8 @@
         "@local/": "./",
         "dotenv": "https://deno.land/std@0.214.0/dotenv/mod.ts",
         "mustache": "https://esm.sh/mustache",
+        "zod-metadata": "https://esm.sh/zod-metadata",
+        "handlebars": "https://esm.sh/handlebars",
         "lodash": "https://esm.sh/lodash",
         "zod-validation-error": "https://esm.sh/zod-validation-error",
         "yaml": "https://esm.sh/yaml",
