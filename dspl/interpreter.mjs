@@ -219,6 +219,7 @@ const elementModules = {
                 }
             });
 
+            // HERE's THE PROBLEM
             const initStep = clonedDspl.elements.find(
                 (step) => step.type === "init"
             );
@@ -236,27 +237,27 @@ const elementModules = {
                 ...resolvedValues
             );
 
-            if (initStep) {
-                initStep.content = {
-                    ...initStep.content,
-                    ...mergedValues,
-                };
-            } else {
-                clonedDspl.elements.unshift({
-                    type: "init",
-                    init: mergedValues,
-                });
-            }
+            // if (initStep) {
+            //     initStep.content = {
+            //         ...initStep.content,
+            //         ...mergedValues,
+            //     };
+            // } else {
+            //     clonedDspl.elements.unshift({
+            //         type: "init",
+            //         init: mergedValues,
+            //     });
+            // }
 
-            const executeFlow = async (item = {}) => {
+            const executeFlow = async (item) => {
                 let childContext = {
-                    history: [],
-                    blackboard: {},
+                    history: [...context.history],
+                    blackboard: context.blackboard,
                     item,
                 };
 
                 try {
-                    childContext = await executeDSPL(clonedDspl, childContext);
+                    await executeDSPL(clonedDspl, context);
                 } catch (error) {
                     console.error("Error in child flow:", error);
                     childContext.history.push({
@@ -286,9 +287,14 @@ const elementModules = {
                         childContext.history[childContext.history.length - 1]
                     );
                 } else if (history === "flat") {
-                    context.history.push(...childContext.history);
+                    console.log("FLAT HISTORY");
+                    context.history.push(
+                        ...childContext.history.slice(context.history.length)
+                    );
                 } else {
-                    context.history.push(childContext.history);
+                    context.history.push(
+                        childContext.history.slice(context.history.length)
+                    );
                 }
             };
 
@@ -303,16 +309,22 @@ const elementModules = {
                     await executeFlow(item);
                 }
             } else if (whileConfig) {
-                const { type, filter } = whileConfig;
+                const { type, filter, max = 5 } = whileConfig;
                 const guardModule = guardModules[type];
 
                 if (!guardModule) {
                     throw new Error(`Unsupported guard type: ${type}`);
                 }
+                let i = 0;
 
-                while (true) {
+                while (i < max) {
+                    i++;
                     const { success } = await guardModule(context, { filter });
-                    if (!success) break;
+
+                    if (!success) {
+                        console.log("Guard failed, breaking out of loop");
+                        break;
+                    }
                     await executeFlow();
                 }
             } else {
@@ -420,149 +432,151 @@ const elementModules = {
             return context;
         },
     },
-    for: {
-        async execute(loopData, context, config) {
-            const {
-                each,
-                in: arrayName,
-                do: loopElements,
-                history = "parallel",
-            } = loopData;
-            const array = await context.blackboard[arrayName];
+    // for: {
+    //     async execute(loopData, context, config) {
+    //         const {
+    //             each,
+    //             in: arrayName,
+    //             do: loopElements,
+    //             history = "parallel",
+    //         } = loopData;
+    //         const array = await context.blackboard[arrayName];
 
-            const processedArray = await makeList(array, context, config);
-            context.blackboard[arrayName] = processedArray;
+    //         const processedArray = await makeList(array, context, config);
+    //         context.blackboard[arrayName] = processedArray;
 
-            let lastContext = context;
+    //         let lastContext = context;
 
-            const executeElement = async (item) => {
-                let loopContext = {
-                    history: JSON.parse(JSON.stringify(lastContext.history)),
-                    blackboard: context.blackboard,
-                    item,
-                };
+    //         const executeElement = async (item) => {
+    //             let loopContext = {
+    //                 history: JSON.parse(JSON.stringify(lastContext.history)),
+    //                 blackboard: context.blackboard,
+    //                 item,
+    //             };
 
-                console.log(
-                    "Loop item:",
-                    await item.description,
-                    item,
-                    loopContext,
-                    loopElements,
-                    processedArray
-                );
+    //             console.log(
+    //                 "Loop item:",
+    //                 await item.description,
+    //                 item,
+    //                 loopContext,
+    //                 loopElements,
+    //                 processedArray
+    //             );
 
-                for (const element of loopElements) {
-                    loopContext = await executeStep(
-                        element,
-                        loopContext,
-                        config
-                    );
-                }
+    //             for (const element of loopElements) {
+    //                 loopContext = await executeStep(
+    //                     element,
+    //                     loopContext,
+    //                     config
+    //                 );
+    //             }
 
-                return loopContext;
-            };
+    //             return loopContext;
+    //         };
 
-            if (history === "sequential") {
-                for (const item of processedArray) {
-                    lastContext = await executeElement(item);
-                }
-            } else {
-                // Use an async library to enforce a concurrency limit
-                const queue = new PQueue({ concurrency: 5 });
+    //         if (history === "sequential") {
+    //             console.log("Sequential loop");
+    //             Deno.exit();
+    //             for (const item of processedArray) {
+    //                 lastContext = await executeElement(item);
+    //             }
+    //         } else {
+    //             // Use an async library to enforce a concurrency limit
+    //             const queue = new PQueue({ concurrency: 5 });
 
-                const tasks = processedArray.map((item) =>
-                    queue.add(() => executeElement(item))
-                );
-                await Promise.all(tasks);
-            }
-            return context;
-        },
-    },
-    invoke: {
-        async execute(invokeData, context, config) {
-            const { dspl: childDspl, map, extract, history } = invokeData;
+    //             const tasks = processedArray.map((item) =>
+    //                 queue.add(() => executeElement(item))
+    //             );
+    //             await Promise.all(tasks);
+    //         }
+    //         return context;
+    //     },
+    // },
+    // invoke: {
+    //     async execute(invokeData, context, config) {
+    //         const { dspl: childDspl, map, extract, history } = invokeData;
 
-            // Deep clone the child DSPL object without serializing properties
-            const clonedChildDspl = _.cloneDeepWith(childDspl, (value) => {
-                if (typeof value === "function") {
-                    return value;
-                }
-            });
+    //         // Deep clone the child DSPL object without serializing properties
+    //         const clonedChildDspl = _.cloneDeepWith(childDspl, (value) => {
+    //             if (typeof value === "function") {
+    //                 return value;
+    //             }
+    //         });
 
-            // Find the init step in the child DSPL
-            const initStep = clonedChildDspl.elements.find(
-                (step) => step.type === "init"
-            );
+    //         // Find the init step in the child DSPL
+    //         const initStep = clonedChildDspl.elements.find(
+    //             (step) => step.type === "init"
+    //         );
 
-            const resolvedValues = await Promise.all(
-                Object.entries(map).map(async ([key, parentKey]) => ({
-                    [key]: await context.blackboard[parentKey],
-                }))
-            );
+    //         const resolvedValues = await Promise.all(
+    //             Object.entries(map).map(async ([key, parentKey]) => ({
+    //                 [key]: await context.blackboard[parentKey],
+    //             }))
+    //         );
 
-            const mergedValues = Object.assign({}, ...resolvedValues);
+    //         const mergedValues = Object.assign({}, ...resolvedValues);
 
-            if (initStep) {
-                // If an init step exists, merge the mapped parent blackboard values into its content
-                initStep.init = {
-                    ...initStep.init,
-                    ...mergedValues,
-                };
-            } else {
-                // If no init step exists, create a new one with the mapped parent blackboard values
-                clonedChildDspl.elements.unshift({
-                    type: "init",
-                    init: mergedValues,
-                });
-            }
+    //         if (initStep) {
+    //             // If an init step exists, merge the mapped parent blackboard values into its content
+    //             initStep.init = {
+    //                 ...initStep.init,
+    //                 ...mergedValues,
+    //             };
+    //         } else {
+    //             // If no init step exists, create a new one with the mapped parent blackboard values
+    //             clonedChildDspl.elements.unshift({
+    //                 type: "init",
+    //                 init: mergedValues,
+    //             });
+    //         }
 
-            // Execute the modified child DSPL flow
-            let childContext = {
-                history: [], // Start with an empty history for the child
-                blackboard: {},
-            };
-            try {
-                childContext = await executeDSPL(clonedChildDspl, childContext);
-            } catch (error) {
-                // If an error occurs in the child flow, bubble it up to the parent
-                childContext.history.push({
-                    role: "system",
-                    content: `Error in child flow: ${error.message}`,
-                });
-            }
+    //         // Execute the modified child DSPL flow
+    //         let childContext = {
+    //             history: [], // Start with an empty history for the child
+    //             blackboard: {},
+    //         };
+    //         try {
+    //             childContext = await executeDSPL(clonedChildDspl, childContext);
+    //         } catch (error) {
+    //             // If an error occurs in the child flow, bubble it up to the parent
+    //             childContext.history.push({
+    //                 role: "system",
+    //                 content: `Error in child flow: ${error.message}`,
+    //             });
+    //         }
 
-            // Extract values from child blackboard to parent blackboard
-            if (extract) {
-                for (const [parentKey, childKey] of Object.entries(extract)) {
-                    context.blackboard[parentKey] = await childContext
-                        .blackboard[childKey];
-                }
-            }
+    //         // Extract values from child blackboard to parent blackboard
+    //         if (extract) {
+    //             for (const [parentKey, childKey] of Object.entries(extract)) {
+    //                 context.blackboard[parentKey] = await childContext
+    //                     .blackboard[childKey];
+    //             }
+    //         }
 
-            // Merge child history into parent history based on the specified strategy
-            if (history === "hidden") {
-                // Add the child history to the parent history, but mark all but the last message as hidden
-                const hiddenHistory = childContext.history
-                    .slice(0, -1)
-                    .map((message) => ({
-                        ...message,
-                        meta: { hidden: true },
-                    }));
-                context.history.push(
-                    ...hiddenHistory,
-                    childContext.history[childContext.history.length - 1]
-                );
-            } else if (history === "flat") {
-                // Add the child history to the parent history as a flat array
-                context.history.push(...childContext.history);
-            } else {
-                // Default: Add the child history as a nested array in the parent history
-                context.history.push(childContext.history);
-            }
+    //         // Merge child history into parent history based on the specified strategy
+    //         if (history === "hidden") {
+    //             // Add the child history to the parent history, but mark all but the last message as hidden
+    //             const hiddenHistory = childContext.history
+    //                 .slice(0, -1)
+    //                 .map((message) => ({
+    //                     ...message,
+    //                     meta: { hidden: true },
+    //                 }));
+    //             context.history.push(
+    //                 ...hiddenHistory,
+    //                 childContext.history[childContext.history.length - 1]
+    //             );
+    //         } else if (history === "flat") {
+    //             // Add the child history to the parent history as a flat array
+    //             context.history.push(...childContext.history);
+    //         } else {
+    //             // Default: Add the child history as a nested array in the parent history
+    //             context.history.push(childContext.history);
+    //         }
 
-            return context;
-        },
-    },
+    //         return context;
+    //     },
+    // },
     message: {
         async execute({ role, content }, context) {
             console.log("Message content:", content);
@@ -625,7 +639,7 @@ const guardModules = {
                 "response",
                 "item",
                 "$",
-                `${guard.filter}`
+                `return (async () => (${guard.filter}))()`
             )(context.response, context.item, context.blackboard);
             console.log("FILTER FUNCTION", res, guard);
             return res;
@@ -682,6 +696,7 @@ async function executeStep(
             "do",
             "init",
             "dspl",
+            "while",
         ];
 
         if (typeof value === "string") {
@@ -725,20 +740,30 @@ async function executeStep(
         context.item
     );
     const originalHistoryLength = context.history.length; //xw + 1; //FIXME, this is a hack to get the length of the history before the element is executed
-    context = await elementModule.execute(resolvedElementData, context, {
-        ...config,
-        ...resolvedElementData,
-    });
+    const newContext = await elementModule.execute(
+        resolvedElementData,
+        context,
+        {
+            ...config,
+            ...resolvedElementData,
+        }
+    );
+
+    context.history = newContext.history;
 
     const response = context.history.slice(-1).pop()?.content;
     console.log("Element response:", JSON.stringify(response, null, 2));
 
     if (typeof response === "object") {
-        console.log("Element response:", JSON.stringify(response, null, 2));
         if (response.function) {
             const functionResponse = await new Function(
                 `return ${response.function}`
             )();
+            console.log(
+                "Function response:",
+                functionResponse,
+                response.function
+            );
             response.response = functionResponse;
         }
     }
@@ -749,7 +774,21 @@ async function executeStep(
         for (const [variableName, path] of Object.entries(parse)) {
             const [bucket, key] = path.split(".");
             const _b = bucket === "$" ? "blackboard" : bucket;
-            context[_b][key] = context.response[variableName];
+            const oldValue = await context[_b][key];
+            const newValue = context.response[variableName] || oldValue;
+            context[_b][key] =
+                context.response[variableName] || (await context[_b][key]);
+
+            console.log(
+                "!!!!!!Parsed variable:",
+                variableName,
+                path,
+                _b,
+                key,
+                oldValue,
+                newValue,
+                await context[_b][key]
+            );
         }
     }
 
@@ -1625,15 +1664,33 @@ const singleChallengeWithPlan = {
             content: "{{model.$.description}}",
         },
         {
+            type: "message",
+            role: "user",
+            content: `Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.
+               The code:
+               - must be a standalone ECMAScript module with no dependencies.
+               - must have a function as the default export.
+               - must accept a single 'lines' argument (an array of input strings).
+               - must return a single array of output strings.
+               - must not mix BigInt and other types, must always use explicit conversions.
+               - should be commented to indicate which part of the code relates to which problem constraint.
+               - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
+              
+               IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general, avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
+              
+               Consider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.
+        `,
+        },
+        {
             type: "prompt",
             content:
-                "Given the programming challenge, provide a clear, step-by-step plan to solve it. Break down the problem into smaller, manageable tasks. Ensure that your plan covers all the necessary aspects, including input parsing, problem-specific logic, edge case handling, and output formatting. Be as detailed and specific as possible in your planning.",
+                "Given the programming challenge and instructions, provide a clear, step-by-step plan to solve it. Break down the problem into smaller, manageable tasks. Ensure that your plan covers all the necessary aspects, including input parsing, problem-specific logic, edge case handling, and output formatting. Be as detailed and specific as possible in your planning.",
             set: "plan",
         },
         {
             type: "prompt",
             content:
-                "Execute the first step of the plan you created to solve the programming challenge. If you need to test any code snippets, provide them as an immediately invoked function expression (IIFE). If you have a complete solution, respond with it in the 'code' property of your response object. Remember to adhere to the rules and constraints specified earlier.",
+                "Execute the first step of the plan you created to solve the programming challenge. If you need to test any code snippets, provide them as an immediately invoked function expression (IIFE) that demonstrates the specific functionality you want to test. The IIFE should include sample input data and return the expected output. IMPORTANT: do not log anything, you won't get any information back unless you return it. If you have a complete solution, respond with it in the 'code' property of your response object and don't use the function property. Remember to adhere to the rules and constraints specified earlier.",
             parse: {
                 code: "$.code",
             },
@@ -1643,13 +1700,42 @@ const singleChallengeWithPlan = {
             while: {
                 type: "function",
                 filter: "{ success: !(await $.public_tests_passed) }",
+                max: 10,
             },
+            history: "flat",
             dspl: {
                 elements: [
                     {
+                        type: "message",
+                        role: "user",
+                        content: `
+                            {{#if !(await model.$.public_tests_passed)}}
+                                Public test results:
+                                {{#each res in await model.$.public_test_results}}
+                                    - Test Result: {{scope.index}} -
+                                    {{#if await res.status == "pass"}}
+                                        Success: {{res.message}}. Congratulations, no errors detected!
+                                    {{#elseif await res.error == "SyntaxError"}}
+                                        Syntax Error Detected: {{res.message}}. Please check your syntax.
+                                    {{#elseif await res.error == "Timeout"}}
+                                        Timeout Error: {{res.message}}. Consider optimizing your code for better performance.
+                                    {{#elseif await res.error == "RuntimeError"}}
+                                        Runtime Error: {{res.message}}. Ensure all variables are defined and accessible.
+                                    {{#elseif await res.error == "TypeError"}}
+                                        Type Error: {{res.message}}. Verify that your data types are correct.
+                                    {{#else}}
+                                        Unknown Error: {{res.message}}. Review the code for potential issues.
+                                    {{/if}}
+                                {{/each}}
+                            {{#else}}
+                                Public tests not yet run. Continue working on the solution.
+                            {{/if}}
+                        `,
+                    },
+                    {
                         type: "prompt",
                         content:
-                            "Continue working on the solution. If you would like to test a code snippet, provide an IIFE function. If you would like to provide a complete solution, respond with it in the 'code' property.",
+                            "If you got back what you expected from your last function, or you havent run a function yet, continue working on the solution. If you would like to test a specific part of your code, provide an IIFE that demonstrates the functionality you want to verify and returns a value that will indicate to you if the test passed or failed. Make sure to declare what values you are expecting to get back from the function. Include sample input data and log or return the expected output to ensure your approach is working correctly. All testing logic and sample data must be contained within the IIFE. If you would like to provide a complete solution, you must set it to the 'code' property in an object response, and it must be an ECMAScript 2017 module with the challenge solving function as the default export.",
                         parse: {
                             code: "$.code",
                         },
@@ -1657,18 +1743,7 @@ const singleChallengeWithPlan = {
                 ],
             },
         },
-        {
-            type: "message",
-            role: "user",
-            content:
-                "Total test results {{public_tests_passed}}: {{#each public_test_results}}{{this.status}}{{#unless @last}}, {{/unless}}{{/each}}",
-        },
-        {
-            type: "prompt",
-            set: "summary",
-            content:
-                "We are now done with this challenge.\nState the challenge name and index. List the various tries, the result (success, partial, fail) of each, and what changed between the versions. Success means all tests passed, partial success means all public tests passed, and fail means all public tests did not pass. For each try, give the numbers of each type of test that was passed.\n\nThen, briefly list the errors you encountered and classify their types (e.g., syntax error, runtime error, etc.) and what you (or should have done) to resolve them. Do not mention challenge-specific details, just general code generation strategy issues. Then provide any changes that should be made to the initial code generation prompts or any of the subsequent prompts.\nIf you encountered no errors, say 'No errors encountered.'",
-        },
+        // ... (remaining elements remain the same)
     ],
 };
 
@@ -1702,7 +1777,8 @@ const singleChallengeWithPlan = {
 
 const singlePlan = await executeDSPL(singleChallengeWithPlan);
 console.log(
-    await singlePlan.blackboard.summary,
+    await singlePlan.blackboard.code,
+    await singlePlan.blackboard.public_test_results,
     JSON.stringify(singlePlan.history, null, 2)
 );
 

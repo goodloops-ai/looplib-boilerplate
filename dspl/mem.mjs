@@ -50,6 +50,7 @@ async function resolve(obj) {
     return ret;
 }
 export function mem(def) {
+    const nonce = Math.floor(Math.random() * 1000000);
     const deps = {};
     const memoizers = Object.entries(def)
         .filter(
@@ -123,6 +124,9 @@ export function mem(def) {
             }
             obj = Object.assign(obj, partial);
 
+            if (key === "code") {
+                console.log("MEM SET", nonce, key, value, obj);
+            }
             // obj = fn(obj);
             return true;
         },
@@ -132,7 +136,9 @@ export function mem(def) {
             if (key === "_obj") return resolve(obj);
 
             if (obj[key]?._mem) return obj[key];
-            console.log("get", key);
+            if (key === "code") {
+                console.log("MEM GET", nonce, key, obj);
+            }
             if (memoizers[key]) {
                 obj = resolveDeps(obj, key);
                 return obj[key];
