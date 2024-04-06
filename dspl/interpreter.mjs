@@ -131,7 +131,7 @@ const llm = async (history, config, file) => {
                 temperature,
                 max_tokens,
                 response_format,
-                // {
+                // response_format: {
                 //     type: "json_object",
                 // },
                 messages,

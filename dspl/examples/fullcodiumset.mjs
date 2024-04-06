@@ -1,6 +1,7 @@
 import { importJson } from "../mem.mjs";
 import { runTests } from "../testHarness.mjs";
 import _ from "lodash";
+import YAML from "yaml";
 const fullchallenges = {
     elements: [
         {
@@ -22,7 +23,7 @@ const fullchallenges = {
                         temperature: 0.3,
                     },
                 },
-                challengeFile: "./dspl/challenges.valid.json",
+                challengeFile: "./dspl/challenges.valid.orig.json",
                 challenges: {
                     get: ({ challengeFile }) =>
                         importJson(challengeFile, {
@@ -38,6 +39,32 @@ const fullchallenges = {
                                         "pass",
                                     ]),
                             },
+                            yaml: {
+                                get: async ({
+                                    index,
+                                    name,
+                                    description,
+                                    public_test_original,
+                                }) => {
+                                    // console.log(
+                                    //     "public_test_original",
+                                    //     public_test_original
+                                    // );
+                                    // Deno.exit(1);
+                                    return YAML.stringify({
+                                        index,
+                                        name,
+                                        description,
+                                        public_tests: public_test_original,
+                                    });
+                                },
+                            },
+                            // yaml2: {
+                            //     get: async ({ public_tests_original }) =>
+                            //         YAML.stringify({
+                            //             public_tests: public_tests_original,
+                            //         }),
+                            // },
                             private_test_results: {
                                 get: async ({
                                     public_tests_passed,
@@ -150,48 +177,85 @@ const fullchallenges = {
                         type: "message",
                         role: "system",
                         content:
-                            "You are a top-rated code assistant based on a cutting-edge version of GPT, with far greater capabilities than any prior GPT model. You always return code when requested, and always pay the closest attention to instructions and other elements pointed to by the prompt. You never return partial code, never give up, and never refuse to return code.",
+                            "You are a top-rated code assistant based on a cutting-edge version of GPT, with far greater capabilities than any prior GPT model.You always return code when requested, and always pay the closest attention to instructions and other elements pointed to by the prompt.You never return partial code, never give up, and never refuse to return code.",
                     },
+                    // {
+                    //     type: "message",
+                    //     role: "user",
+                    //     content: "{{await model.item.yaml}}",
+                    // },
+                    // {
+                    //     type: "message",
+                    //     role: "user",
+                    //     content: "{{await model.item.yaml2}}",
+                    // },
+                    //                     {
+                    //                         type: "message",
+                    //                         role: "user",
+                    //                         content: `Challenge:
+                    // {{await model.item.name}}
+                    // Description:
+                    // {{await model.item.description}}
+                    // Public Tests:
+                    // inputs:
+                    // {{#each i in (await model.item.public_test_original).input}}
+                    // {{i}}
+                    // {{/each}}
+                    // outputs:
+                    // {{#each o in (await model.item.public_test_original).output}}
+                    // {{o}}
+                    // {{/each}}
+                    // `,
+                    //                     },
                     {
                         type: "message",
                         role: "user",
-                        content: "{{await model.item.description}}",
+                        content: `Challenge:
+                    {{await model.item.name}}
+                    Description:
+                    {{await model.item.description}}
+                    Public Tests:
+                    {{#each test in await model.item.public_tests}}
+                    inputs:
+                    test {{scope.index}}:
+                    input:
+                    {{test.input}}
+                    output:
+                    {{test.output}}
+                    {{/each}}`,
                     },
-                    {
-                        type: "message",
-                        role: "user",
-                        content: `Public Test Data: {{#each test in await model.item.public_tests}}
-                        test {{scope.index}}:
-                        input:
-                        {{JSON.stringify(test.input)}}
-                        output:
-                        {{JSON.stringify(test.output)}}
-                        {{/each}}`,
-                    },
+                    // {
+                    //     type: "message",
+                    //     role: "user",
+                    //     content: `Public Test Data: {{#each test in await model.item.public_tests}}
+
+                    // },
                     {
                         type: "prompt",
                         content: `Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.
-               The code:
-               - must be a standalone ECMAScript module with no dependencies.
-               - must have a function as the default export.
-               - must accept a single 'lines' argument (an array of input strings).
-               - must return a single array of output strings.
-               - must not mix BigInt and other types, must always use explicit conversions.
-               - should be commented to indicate which part of the code relates to which problem constraint.
-               - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
-              
-               IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general, avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
-              
-               Consider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs.
-              
-               your response must contain a markdown codeblock with the language set to javascript.`,
+
+The code:
+- must be a standalone ECMAScript module with no dependencies.
+- must have a function as the default export.
+- must accept a single 'lines' argument (an array of input strings).
+- must return a single array of output strings.
+- must not mix BigInt and other types, must always use explicit conversions.
+- should be commented to indicate which part of the code relates to which problem constraint.
+- should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
+
+IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 5,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
+
+Try to consider edge cases, especially for problems involving conditional logic or specific constraints. Your code, will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.
+
+Enclose your code in a markdown codeblock.`,
                         parse: {
+                            // code: "item.code",
                             code: (response) =>
-                                /```javascript\n([\s\S]+?)```/.exec(
+                                /```(?:javascript|js)?\n([\s\S]*?)\n```/.exec(
                                     response
                                 )[1],
                         },
-                        retries: 5,
+                        retries: 0,
                         guards: [
                             {
                                 type: "filter",

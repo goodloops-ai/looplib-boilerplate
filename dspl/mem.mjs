@@ -32,9 +32,10 @@ export const importJson = async (pathOrObj, def = {}) => {
 };
 
 async function resolve(obj) {
+    if (!obj) return obj;
     if (obj?._mem) return obj._obj;
     // Check if obj is a promise and await it if so
-    if (typeof obj !== "object" || obj.then) return await obj;
+    if (typeof obj !== "object" || obj?.then) return await obj;
 
     // If obj is an array, map over it and resolve each element
     if (Array.isArray(obj)) {
