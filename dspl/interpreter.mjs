@@ -25,9 +25,9 @@ const JSON_INSTRUCT = (md) => `Your response must be in JSON format ${
     md ? "inside a markdown code block" : ""
 }, with no additional text.               
 Your root response must be an object with at least the following keys:
-reasoning: a brief exploration of your thought process.
-response: an object containing your response as per the users instructions. only ONE of response or function is allowed.
-function: a IIFE that returns a response object as per the users instruction. only ONE of response or function is allowed.
+reasoning: required - a brief exploration of your thought process.
+response: required - an object containing your response as per the users instructions.
+function: optional - a IIFE that returns some value. that value will be provided to you in a subsequent message
 guards: (optional) an array of objects containing the following keys:
     - type: the type of guard, either "llm" or "filter" or "function"
     - filter: the filter to be applied. 
@@ -37,8 +37,8 @@ guards: (optional) an array of objects containing the following keys:
             - It may assume that 'response' is in scope.
             - It should return an object with a success boolean key and a message string.
 
-only ONE of response or function is allowed, as the result of the function execution will be placed in the response field.
-Sometimes the user might have asked you to provide additional fields. Don't get confused by this, you should provide user requested fields under the response object. The function field should only be used if you decide you need to compute something to answer a user question, for instance if they ask you to compute the sum of an array of numbers, or if you need to test a piece of code before returning it.
+Sometimes the user might have asked you to provide additional fields. Don't get confused by this, you should provide user requested fields under the response object.
+The function field should only be used if you decide you need to compute something to answer a user question, for instance if they ask you to compute the sum of an array of numbers, or if you need to test a piece of code.
 
 If the user made a specific mention of the way you should structure your data, interpret that as structure to be put into your 'response' object, either directly or in the shape of the object you return from a function.
 Make sure your JSON is valid, and that you have no additional text in your response.
@@ -173,6 +173,7 @@ const llm = async (history, config, file) => {
             return newHistory;
         } catch (error) {
             console.error("Error in llm function:", error);
+            Deno.exit();
             return history;
         }
     }
@@ -217,8 +218,6 @@ const elementModules = {
                 while: whileConfig,
             } = elementData;
 
-            forConfig.concurrency = forConfig.concurrency || 1;
-
             const clonedDspl = _.cloneDeepWith(dspl, (value) => {
                 if (typeof value === "function") {
                     return value;
@@ -254,7 +253,6 @@ const elementModules = {
             //         init: mergedValues,
             //     });
             // }
-            const limit = pLimit(forConfig.concurrency);
 
             const executeFlow = async (item) => {
                 let childContext = {
@@ -267,6 +265,7 @@ const elementModules = {
                     await executeDSPL(clonedDspl, childContext);
                 } catch (error) {
                     console.error("Error in child flow:", error);
+                    Deno.exit();
                     childContext.history.push({
                         role: "system",
                         content: `Error in child flow: ${error.message}`,
@@ -282,7 +281,7 @@ const elementModules = {
                     }
                 }
 
-                if (history === "none" || forConfig.concurrency > 1) {
+                if (history === "none" || forConfig?.concurrency > 1) {
                     const hiddenHistory = childContext.history.map(
                         (message) => ({
                             ...message,
@@ -315,11 +314,13 @@ const elementModules = {
 
             if (forConfig) {
                 //TODO: we need to fix array schemas
+
                 const { each, in: arrayName } = forConfig;
+
+                const limit = pLimit(forConfig.concurrency || 1);
                 const array = await context.blackboard[arrayName];
                 const processedArray = await makeList(array, context, config);
 
-                console.log("Processed array:", processedArray);
                 const promises = processedArray.map((item) =>
                     limit(() => executeFlow(item))
                 );
@@ -635,12 +636,13 @@ async function executeStep(
             const functionResponse = await new Function(
                 `return ${response.function}`
             )();
-            // console.log(
-            //     "Function response:",
-            //     functionResponse,
-            //     response.function
-            // );
-            response.response = functionResponse;
+
+            context.history.push({
+                role: "system",
+                content: functionResponse
+                    ? JSON.stringify(functionResponse, null, 2)
+                    : "no response from function",
+            });
         }
     }
 
@@ -797,6 +799,7 @@ Ensure that the response is a valid JSON object, and each item in the array is a
         return makeList(response.data || [], context, config);
     } catch (error) {
         console.error("Error parsing JSON response:", error);
+        Deno.exit();
         return [];
     }
 };

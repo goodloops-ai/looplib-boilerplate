@@ -1,5 +1,6 @@
 import { importJson } from "../mem.mjs";
 import { runTests } from "../testHarness.mjs";
+import _ from "lodash";
 const fullchallenges = {
     elements: [
         {
