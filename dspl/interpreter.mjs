@@ -113,11 +113,11 @@ const llm = async (history, config, file) => {
                     : content;
 
                 return { role, content };
-            })
-            .concat({
-                role: "system",
-                content: JSON_INSTRUCT(),
             });
+        // .concat({
+        //     role: "system",
+        //     content: JSON_INSTRUCT(),
+        // });
 
         const openai = new OpenAI({
             dangerouslyAllowBrowser: true,
@@ -130,9 +130,10 @@ const llm = async (history, config, file) => {
                 model,
                 temperature,
                 max_tokens,
-                response_format: {
-                    type: "json_object",
-                },
+                response_format,
+                // {
+                //     type: "json_object",
+                // },
                 messages,
                 n,
             });
@@ -140,7 +141,7 @@ const llm = async (history, config, file) => {
             // console.log("Response:", response);
 
             const assistantMessages = response.choices.map(({ message }) => {
-                message.content = JSON.parse(message.content);
+                // message.content = JSON.parse(message.content);
                 return message;
             });
 
@@ -602,6 +603,19 @@ async function executeStep(
 
     if (parse) {
         for (const [variableName, path] of Object.entries(parse)) {
+            if (typeof path === "function") {
+                context.blackboard[variableName] = await path(
+                    context.response,
+                    context.blackboard
+                );
+                if (context.item) {
+                    context.item[variableName] = await path(
+                        context.response,
+                        context.blackboard
+                    );
+                }
+                continue;
+            }
             const [bucket, key] = path.split(".");
             const _b = bucket === "$" ? "blackboard" : bucket;
             const oldValue = await context[_b][key];

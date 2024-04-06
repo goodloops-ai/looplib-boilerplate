@@ -19,7 +19,7 @@ const fullchallenges = {
                 $: {
                     prompt: {
                         model: "gpt-4-0125-preview",
-                        temperature: 0.4,
+                        temperature: 0.3,
                     },
                 },
                 challengeFile: "./dspl/challenges.valid.json",
@@ -51,12 +51,16 @@ const fullchallenges = {
                                         : [],
                             },
                             private_tests_passed: {
-                                get: ({ private_test_results }) =>
-                                    private_test_results?.length &&
-                                    _.every(private_test_results, [
-                                        "status",
-                                        "pass",
-                                    ]),
+                                get: ({
+                                    private_tests,
+                                    private_test_results,
+                                }) =>
+                                    !private_tests.length ||
+                                    (private_test_results?.length &&
+                                        _.every(private_test_results, [
+                                            "status",
+                                            "pass",
+                                        ])),
                             },
                             generated_test_results: {
                                 get: async ({
@@ -76,12 +80,16 @@ const fullchallenges = {
                                         : [],
                             },
                             generated_tests_passed: {
-                                get: ({ generated_test_results }) =>
-                                    generated_test_results?.length &&
-                                    _.every(generated_test_results, [
-                                        "status",
-                                        "pass",
-                                    ]),
+                                get: ({
+                                    generated_tests,
+                                    generated_test_results,
+                                }) =>
+                                    !generated_tests.length ||
+                                    (generated_test_results?.length &&
+                                        _.every(generated_test_results, [
+                                            "status",
+                                            "pass",
+                                        ])),
                             },
                             tests_passed: {
                                 get: ({
@@ -96,7 +104,7 @@ const fullchallenges = {
                                     );
                                 },
                             },
-                        }),
+                        }), //.then((challenges) => challenges.slice(0, 1)),
                 },
                 challengesJSON: {
                     get: async ({ challenges }) => {
@@ -174,11 +182,14 @@ const fullchallenges = {
               
                IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general, avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
               
-               Consider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.
+               Consider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs.
               
-               your response object must have the source code in the 'code' property.`,
+               your response must contain a markdown codeblock with the language set to javascript.`,
                         parse: {
-                            code: "item.code",
+                            code: (response) =>
+                                /```javascript\n([\s\S]+?)```/.exec(
+                                    response
+                                )[1],
                         },
                         retries: 5,
                         guards: [
@@ -286,7 +297,19 @@ If you encountered no errors, say "No errors encountered."`,
             Passed Public Tests: {{await challenge.public_tests_passed}}
             Passed Private Tests: {{await challenge.private_tests_passed}}
             Passed Generated Tests: {{await challenge.generated_tests_passed}}
+
+            Public Test Results:
             {{#each res in await challenge.public_test_results}}
+            - Test Result: {{scope.index}} - {{await res.status}} - {{await res.message}}
+            {{/each}}
+
+            Private Test Results:
+            {{#each res in await challenge.private_test_results}}
+            - Test Result: {{scope.index}} - {{await res.status}} - {{await res.message}}
+            {{/each}}
+
+            Generated Test Results:
+            {{#each res in await challenge.generated_test_results}}
             - Test Result: {{scope.index}} - {{await res.status}} - {{await res.message}}
             {{/each}}
 
