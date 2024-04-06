@@ -1,6 +1,6 @@
 import executeDSPL from "./interpreter.mjs";
 const codefile = new URL(Deno.args[0], `file://${Deno.cwd()}/`).href;
-const outputfile = new URL(Deno.args[1], `file://${Deno.cwd()}/`).href;
+const outputfile = Deno.args[1];
 
 const code = await import(codefile);
 

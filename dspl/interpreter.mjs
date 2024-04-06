@@ -4,45 +4,18 @@ import { load } from "https://deno.land/std@0.214.0/dotenv/mod.ts";
 import { mem } from "./mem.mjs";
 import { ensureDir } from "https://deno.land/std/fs/mod.ts";
 import { dirname } from "https://deno.land/std/path/mod.ts";
-import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
 import epub from "https://deno.land/x/epubgen/mod.ts";
 import moe from "https://esm.sh/@toptensoftware/moe-js";
 import pLimit from "https://esm.sh/p-limit";
-
-globalThis.XMLSerializer = function () {
-    return {
-        serializeToString: xmlserializer.serializeToString,
-    };
-};
-
-globalThis.DOMParser = DOMParser;
 
 // import EpubGenerator from "https://esm.sh/epub-gen";
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
 await load({ export: true });
 
-const JSON_INSTRUCT = (md) => `Your response must be in JSON format ${
-    md ? "inside a markdown code block" : ""
-}, with no additional text.               
-Your root response must be an object with at least the following keys:
-reasoning: required - a brief exploration of your thought process.
-response: required - an object containing your response as per the users instructions.
-function: optional - a IIFE that returns some value. that value will be provided to you in a subsequent message
-guards: (optional) an array of objects containing the following keys:
-    - type: the type of guard, either "llm" or "filter" or "function"
-    - filter: the filter to be applied. 
-        - if the guard type is "llm", this is the prompt to be used to ask an llm whether the response is acceptable. 
-        - if the guard type is "filter", this is the key in the response object to be used as a boolean filter.
-        - if the guard type is "function", this is the iife to be used as a boolean filter. 
-            - It may assume that 'response' is in scope.
-            - It should return an object with a success boolean key and a message string.
-
-Sometimes the user might have asked you to provide additional fields. Don't get confused by this, you should provide user requested fields under the response object.
-The function field should only be used if you decide you need to compute something to answer a user question, for instance if they ask you to compute the sum of an array of numbers, or if you need to test a piece of code.
-
-If the user made a specific mention of the way you should structure your data, interpret that as structure to be put into your 'response' object, either directly or in the shape of the object you return from a function.
-Make sure your JSON is valid, and that you have no additional text in your response.
-`;
+const JSON_INSTRUCT = (md) =>
+    `Your response must be in JSON format ${
+        md ? "inside a markdown code block" : ""
+    }, with no additional text.`;
 
 const llm = async (history, config, file) => {
     const {
@@ -54,8 +27,8 @@ const llm = async (history, config, file) => {
         n = 1,
     } = config;
 
-    console.log(JSON.stringify(history, null, 2));
-    console.log("...running llm function...", JSON.stringify(config, null, 2));
+    // console.log(JSON.stringify(history, null, 2));
+    // console.log("...running llm function...", JSON.stringify(config, null, 2));
 
     const model = response_format ? "gpt-4-0125-preview" : _model;
     if (model.startsWith("claude")) {
@@ -118,7 +91,10 @@ const llm = async (history, config, file) => {
             ];
 
             const newHistory = [...history, ...assistantMessages];
-            console.log("LATEST:", JSON.stringify(newHistory, null, 2));
+            console.log(
+                "LATEST:",
+                JSON.stringify(newHistory.slice(-2), null, 2)
+            );
             // Deno.exit();
             return newHistory;
         } catch (error) {
@@ -162,6 +138,7 @@ const llm = async (history, config, file) => {
             });
 
             // console.log("Response:", response);
+
             const assistantMessages = response.choices.map(({ message }) => {
                 message.content = JSON.parse(message.content);
                 return message;
@@ -169,11 +146,14 @@ const llm = async (history, config, file) => {
 
             const newHistory = [...history, ...assistantMessages];
             // console.log("New history:", newHistory);
-            console.log("LATEST:", JSON.stringify(newHistory, null, 2));
+            console.log(
+                "LATEST:",
+                JSON.stringify(newHistory.slice(-2), null, 2)
+            );
             return newHistory;
         } catch (error) {
             console.error("Error in llm function:", error);
-            Deno.exit();
+            // Deno.exit();
             return history;
         }
     }
@@ -224,48 +204,20 @@ const elementModules = {
                 }
             });
 
-            // HERE's THE PROBLEM
-            const initStep = clonedDspl.elements.find(
-                (step) => step.type === "init"
-            );
-
-            const resolvedValues = await Promise.all(
-                Object.entries(map || {}).map(async ([key, parentKey]) => ({
-                    [key]: await context.blackboard[parentKey],
-                }))
-            );
-
-            const mergedValues = Object.assign(
-                {
-                    $: context.blackboard.$,
-                },
-                ...resolvedValues
-            );
-
-            // if (initStep) {
-            //     initStep.content = {
-            //         ...initStep.content,
-            //         ...mergedValues,
-            //     };
-            // } else {
-            //     clonedDspl.elements.unshift({
-            //         type: "init",
-            //         init: mergedValues,
-            //     });
-            // }
-
             const executeFlow = async (item) => {
-                let childContext = {
+                const childContext = {
                     history: [...context.history],
                     blackboard: context.blackboard,
                     item,
                 };
 
+                const historyStartingLength = context.history.length;
+
                 try {
                     await executeDSPL(clonedDspl, childContext);
                 } catch (error) {
                     console.error("Error in child flow:", error);
-                    Deno.exit();
+                    // Deno.exit();
                     childContext.history.push({
                         role: "system",
                         content: `Error in child flow: ${error.message}`,
@@ -282,16 +234,16 @@ const elementModules = {
                 }
 
                 if (history === "none" || forConfig?.concurrency > 1) {
-                    const hiddenHistory = childContext.history.map(
-                        (message) => ({
+                    const hiddenHistory = childContext.history
+                        .slice(historyStartingLength)
+                        .map((message) => ({
                             ...message,
                             meta: { hidden: true },
-                        })
-                    );
+                        }));
                     context.history.push(...hiddenHistory);
                 } else if (history === "hidden") {
                     const hiddenHistory = childContext.history
-                        .slice(0, -1)
+                        .slice(historyStartingLength, -1)
                         .map((message) => ({
                             ...message,
                             meta: { hidden: true },
@@ -303,11 +255,11 @@ const elementModules = {
                 } else if (history === "flat") {
                     // console.log("FLAT HISTORY");
                     context.history.push(
-                        ...childContext.history.slice(context.history.length)
+                        ...childContext.history.slice(historyStartingLength)
                     );
                 } else {
                     context.history.push(
-                        childContext.history.slice(context.history.length)
+                        childContext.history.slice(historyStartingLength)
                     );
                 }
             };
@@ -486,7 +438,7 @@ const guardModules = {
 
         const { success, message, ...rest } = ratingContext.history
             .slice(-1)
-            .pop().content.response;
+            .pop().content;
 
         return {
             success,

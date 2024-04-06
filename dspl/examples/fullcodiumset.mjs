@@ -19,7 +19,7 @@ const fullchallenges = {
                 $: {
                     prompt: {
                         model: "gpt-4-0125-preview",
-                        temperature: 0.3,
+                        temperature: 0.4,
                     },
                 },
                 challengeFile: "./dspl/challenges.valid.json",
@@ -98,6 +98,35 @@ const fullchallenges = {
                             },
                         }),
                 },
+                challengesJSON: {
+                    get: async ({ challenges }) => {
+                        return JSON.stringify(
+                            await Promise.all(
+                                challenges.map(async (c) => {
+                                    return {
+                                        name: await c.name,
+                                        code: await c.code,
+                                        tests_passed: await c.tests_passed,
+                                        public_tests_passed:
+                                            await c.public_tests_passed,
+                                        private_tests_passed:
+                                            await c.private_tests_passed,
+                                        generated_tests_passed:
+                                            await c.generated_tests_passed,
+                                        public_test_results:
+                                            await c.public_test_results,
+                                        private_test_results:
+                                            await c.private_test_results,
+                                        generated_test_results:
+                                            await c.generated_test_results,
+                                    };
+                                })
+                            ),
+                            null,
+                            2
+                        );
+                    },
+                },
             },
         },
         {
@@ -119,6 +148,17 @@ const fullchallenges = {
                         type: "message",
                         role: "user",
                         content: "{{await model.item.description}}",
+                    },
+                    {
+                        type: "message",
+                        role: "user",
+                        content: `Public Test Data: {{#each test in await model.item.public_tests}}
+                        test {{scope.index}}:
+                        input:
+                        {{JSON.stringify(test.input)}}
+                        output:
+                        {{JSON.stringify(test.output)}}
+                        {{/each}}`,
                     },
                     {
                         type: "prompt",
@@ -146,11 +186,6 @@ const fullchallenges = {
                                 type: "filter",
                                 filter: "item.code",
                                 policy: "retry",
-                            },
-                            {
-                                type: "llm",
-                                filter: "the code property must be an ECMAScript module with the proper default export",
-                                policy: "append",
                             },
                             {
                                 type: "filter",
@@ -239,9 +274,18 @@ If you encountered no errors, say "No errors encountered."`,
         {
             type: "message",
             role: "system",
+            content: `{{ await model.$.challengesJSON }}`,
+        },
+        {
+            type: "message",
+            role: "system",
             content: `All challenges have been completed.
             {{#each challenge in await model.$.challenges}}
             Challenge: {{await challenge.name}}
+            Passed all tests: {{await challenge.tests_passed}}
+            Passed Public Tests: {{await challenge.public_tests_passed}}
+            Passed Private Tests: {{await challenge.private_tests_passed}}
+            Passed Generated Tests: {{await challenge.generated_tests_passed}}
             {{#each res in await challenge.public_test_results}}
             - Test Result: {{scope.index}} - {{await res.status}} - {{await res.message}}
             {{/each}}
