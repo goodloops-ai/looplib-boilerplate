@@ -95,7 +95,7 @@ const fullchallenges = {
                                     );
                                 },
                             },
-                        }).then((c) => c.slice(0, 5)),
+                        }),
                 },
             },
         },
@@ -104,6 +104,7 @@ const fullchallenges = {
             for: {
                 each: "challenge",
                 in: "challenges",
+                concurrency: 10,
             },
             dspl: {
                 elements: [
@@ -138,7 +139,7 @@ const fullchallenges = {
                         parse: {
                             code: "item.code",
                         },
-                        retries: 3,
+                        retries: 5,
                         guards: [
                             {
                                 type: "filter",

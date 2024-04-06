@@ -24,10 +24,10 @@ await load({ export: true });
 const JSON_INSTRUCT = (md) => `Your response must be in JSON format ${
     md ? "inside a markdown code block" : ""
 }, with no additional text.               
-Your root response must be an object with the following keys:
+Your root response must be an object with at least the following keys:
 reasoning: a brief exploration of your thought process.
 response: an object containing your response as per the users instructions. only ONE of response or function is allowed.
-function: a iife that returns a response object as per the users instruction. only ONE of response or function is allowed.
+function: a IIFE that returns a response object as per the users instruction. only ONE of response or function is allowed.
 guards: (optional) an array of objects containing the following keys:
     - type: the type of guard, either "llm" or "filter" or "function"
     - filter: the filter to be applied. 
@@ -37,8 +37,8 @@ guards: (optional) an array of objects containing the following keys:
             - It may assume that 'response' is in scope.
             - It should return an object with a success boolean key and a message string.
 
-only ONE of response or function is allowed.
-Sometimes the user might have asked you to provide code: don't get confused by this, you should provide user requested code in a response object: The function should only be used if you decide you need to compute something to answer a user question, for instance if they ask you to compute the sum of an array of numbers, or if you need to test a piece of code before returning it.
+only ONE of response or function is allowed, as the result of the function execution will be placed in the response field.
+Sometimes the user might have asked you to provide additional fields. Don't get confused by this, you should provide user requested fields under the response object. The function field should only be used if you decide you need to compute something to answer a user question, for instance if they ask you to compute the sum of an array of numbers, or if you need to test a piece of code before returning it.
 
 If the user made a specific mention of the way you should structure your data, interpret that as structure to be put into your 'response' object, either directly or in the shape of the object you return from a function.
 Make sure your JSON is valid, and that you have no additional text in your response.
