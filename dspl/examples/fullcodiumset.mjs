@@ -59,6 +59,24 @@ const fullchallenges = {
                                     });
                                 },
                             },
+                            json: {
+                                get: async ({
+                                    index,
+                                    name,
+                                    description,
+                                    public_test_original,
+                                }) =>
+                                    JSON.stringify(
+                                        {
+                                            index,
+                                            name,
+                                            description,
+                                            public_tests: public_test_original,
+                                        },
+                                        null,
+                                        2
+                                    ),
+                            },
                             // yaml2: {
                             //     get: async ({ public_tests_original }) =>
                             //         YAML.stringify({
@@ -184,11 +202,11 @@ const fullchallenges = {
                     //     role: "user",
                     //     content: "{{await model.item.yaml}}",
                     // },
-                    // {
-                    //     type: "message",
-                    //     role: "user",
-                    //     content: "{{await model.item.yaml2}}",
-                    // },
+                    {
+                        type: "message",
+                        role: "user",
+                        content: "{{await model.item.json}}",
+                    },
                     //                     {
                     //                         type: "message",
                     //                         role: "user",
@@ -207,28 +225,27 @@ const fullchallenges = {
                     // {{/each}}
                     // `,
                     //                     },
-                    {
-                        type: "message",
-                        role: "user",
-                        content: `Challenge:
-                    {{await model.item.name}}
-                    Description:
-                    {{await model.item.description}}
-                    Public Tests:
-                    {{#each test in await model.item.public_tests}}
-                    inputs:
-                    test {{scope.index}}:
-                    input:
-                    {{test.input}}
-                    output:
-                    {{test.output}}
-                    {{/each}}`,
-                    },
+                    // {
+                    //     type: "message",
+                    //     role: "user",
+                    //     content: `Challenge:
+                    // {{await model.item.name}}
+                    // Description:
+                    // {{await model.item.description}}
+                    // Public Tests:
+                    // {{#each test in await model.item.public_tests}}
+                    // inputs:
+                    // test {{scope.index}}:
+                    // input:
+                    // {{test.input}}
+                    // output:
+                    // {{test.output}}
+                    // {{/each}}`,
+                    // },
                     // {
                     //     type: "message",
                     //     role: "user",
                     //     content: `Public Test Data: {{#each test in await model.item.public_tests}}
-
                     // },
                     {
                         type: "prompt",
