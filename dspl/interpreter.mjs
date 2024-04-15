@@ -212,17 +212,17 @@ const elementModules = {
                 const historyStartingLength = context.history.length;
 
                 try {
-                    const { messages } = await executeDSPL(
+                    const { messages, context } = await executeDSPL(
                         clonedDspl,
                         childContext
                     );
-                    return messages;
+                    return context.history.slice(historyStartingLength);
                 } catch (error) {
                     console.error("Error in child flow:", error);
                     return [
                         {
                             role: "system",
-                            content: `Error in child flow: ${error.message}`,
+                            content: `Error in child flow: ${error.message}, ${error.stack}`,
                         },
                     ];
                 }
@@ -241,7 +241,7 @@ const elementModules = {
                     limit(() => executeFlow(item))
                 );
                 const results = await Promise.all(promises);
-                messages = results.flat();
+                messages = results;
             } else if (whileConfig) {
                 const { type, filter, max = 5 } = whileConfig;
                 const guardModule = guardModules[type];
@@ -260,12 +260,12 @@ const elementModules = {
                     }
                     if (i < max) {
                         const flowMessages = await executeFlow();
-                        messages.push(...flowMessages);
+                        messages.push(flowMessages);
                     }
                 }
             } else {
                 const flowMessages = await executeFlow();
-                messages.push(...flowMessages);
+                messages.push(flowMessages);
             }
 
             return messages;
@@ -452,8 +452,12 @@ async function executeDSPL(
     let messages = [];
 
     for (const element of dsplObject.elements) {
+        const newContext = {
+            history: messages,
+        };
+        newContext.blackboard = context.blackboard;
         const elementMessages = await executeStep(element, context);
-        messages.push(...elementMessages);
+        context.history.push(...elementMessages);
     }
 
     return { messages, context };
@@ -467,6 +471,8 @@ async function executeStep(
 ) {
     const { type, parse, set, ...elementData } = element;
     const elementModule = elementModules[type];
+
+    const messages = context.history.slice(0);
 
     if (!elementModule) {
         throw new Error(`Unsupported element type: ${type}`);
@@ -531,15 +537,19 @@ async function executeStep(
         context.blackboard,
         context.item
     );
-    const originalHistoryLength = context.history.length;
-    const messages = await elementModule.execute(resolvedElementData, context, {
-        ...config,
-        ...resolvedElementData,
-    });
+    const originalHistoryLength = messages.length;
+    const newMessages = await elementModule.execute(
+        resolvedElementData,
+        context,
+        {
+            ...config,
+            ...resolvedElementData,
+        }
+    );
 
-    context.history.push(...messages);
+    messages.push(...newMessages);
 
-    const response = context.history.slice(-1).pop()?.content;
+    const response = messages.slice(-1).pop()?.content;
     // console.log("Element response:", JSON.stringify(response, null, 2));
 
     if (typeof response === "object") {
@@ -548,7 +558,7 @@ async function executeStep(
                 `return ${response.function}`
             )();
 
-            context.history.push({
+            messages.push({
                 role: "system",
                 content: functionResponse
                     ? JSON.stringify(functionResponse, null, 2)
@@ -612,26 +622,28 @@ async function executeStep(
         }
 
         if (!success) {
-            context.history.push({
+            messages.push({
                 role: "user",
                 content: message,
             });
 
             if (retries > 0) {
                 if (guard.policy === "retry") {
-                    context.history = context.history
-                        .slice(0, originalHistoryLength)
-                        .concat(
-                            context.history
-                                .slice(originalHistoryLength)
-                                .map((message) => {
-                                    if (!message.meta) {
-                                        message.meta = { hidden: true };
-                                    }
-                                    return message;
-                                })
-                        );
-                    return await executeStep(
+                    messages = messages.slice(0, originalHistoryLength).concat(
+                        context.history
+                            .slice(originalHistoryLength)
+                            .map((message) => {
+                                if (!message.meta) {
+                                    message.meta = { hidden: true };
+                                }
+                                return message;
+                            })
+                    );
+                    const newContext = {
+                        ...context,
+                        history: messages,
+                    };
+                    const newMessages = await executeStep(
                         {
                             type,
                             parse,
@@ -639,12 +651,19 @@ async function executeStep(
                             ...elementData,
                             retries: retries - 1,
                         },
-                        context,
+                        newContext,
                         config,
                         retries - 1
                     );
+
+                    messages.push(...newMessages);
+                    return messages.slice(originalHistoryLength);
                 } else if (guard.policy === "append") {
-                    return await executeStep(
+                    const newContext = {
+                        ...context,
+                        history: messages,
+                    };
+                    const newMessages = await executeStep(
                         {
                             type,
                             parse,
@@ -656,21 +675,28 @@ async function executeStep(
                             }),
                             retries: retries - 1,
                         },
-                        context,
+                        newContext,
                         config,
                         retries - 1
                     );
+                    messages.push(...newMessages);
+                    return messages.slice(originalHistoryLength);
                 }
             } else {
                 guardFailed = true;
                 if (elementData.onFail) {
                     for (const failElement of elementData.onFail) {
-                        const messages = await executeStep(
+                        const newContext = {
+                            ...context,
+                            history: messages,
+                        };
+                        const newMessages = await executeStep(
                             failElement,
                             context,
                             config
                         );
-                        context.history.push(...messages);
+
+                        messages.push(...newMessages);
                     }
                 }
             }
@@ -680,19 +706,35 @@ async function executeStep(
 
     if (!guardFailed && elementData.onSuccess) {
         for (const successElement of elementData.onSuccess) {
-            const messages = await executeStep(successElement, context, config);
-            context.history.push(...messages);
+            const newContext = {
+                ...context,
+                history: messages,
+            };
+            const newMessages = await executeStep(
+                successElement,
+                context,
+                config
+            );
+            messages.push(...newMessages);
         }
     }
 
     if (elementData.finally) {
         for (const finallyElement of elementData.finally) {
-            const messages = await executeStep(finallyElement, context, config);
-            context.history.push(...messages);
+            const newContext = {
+                ...context,
+                history: messages,
+            };
+            const newMessages = await executeStep(
+                finallyElement,
+                context,
+                config
+            );
+            messages.push(...newMessages);
         }
     }
 
-    return context.history.slice(originalHistoryLength);
+    return messages.slice(originalHistoryLength);
 }
 
 const makeList = async (
@@ -715,7 +757,7 @@ ${input}
 Ensure that the response is a valid JSON object, and each item in the array is an object. If the input is not an array, wrap it in an array before returning the JSON object.`,
     };
 
-    // console.log("makeList prompt", prompt, context, config, file);
+    console.log("makeList prompt", prompt, context, config, file);
 
     const res = await llm(
         [...context.history, prompt],

@@ -7,8 +7,6 @@ const code = await import(codefile);
 const { messages, context: result } = await executeDSPL(code.default);
 
 console.log(JSON.stringify(await result.blackboard._obj, null, 2));
-console.log(JSON.stringify(result.history, null, 2));
-console.log(result.history.slice(-1)[0].content);
 
 if (Deno.args[1]) {
     await Deno.writeTextFile(
@@ -16,7 +14,7 @@ if (Deno.args[1]) {
         JSON.stringify(
             {
                 blackboard: await result.blackboard._obj,
-                history: messages,
+                history: result.history,
             },
             null,
             2
