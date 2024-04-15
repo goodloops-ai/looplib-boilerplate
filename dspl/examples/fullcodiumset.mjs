@@ -1,5 +1,5 @@
 import { importJson } from "../mem.mjs";
-import { runTests } from "../testHarness.mjs";
+import { runTests } from "../testHarness.quickjs.mjs";
 import _ from "lodash";
 import YAML from "yaml";
 const fullchallenges = {
@@ -9,7 +9,7 @@ const fullchallenges = {
             import: {
                 _: "https://esm.sh/lodash",
                 Formula: "https://esm.sh/",
-                runTests: "./testHarness.mjs",
+                runTests: "./testHarness.quickjs.mjs",
                 importJson: "./mem.mjs",
                 mem: "./mem.mjs",
             },
@@ -19,7 +19,7 @@ const fullchallenges = {
             init: {
                 $: {
                     prompt: {
-                        model: "gpt-4-0125-preview",
+                        model: "gpt-4-turbo-2024-04-09",
                         temperature: 0.3,
                     },
                 },
@@ -149,7 +149,7 @@ const fullchallenges = {
                                     );
                                 },
                             },
-                        }), //.then((challenges) => challenges.slice(0, 1)),
+                        }),
                 },
                 challengesJSON: {
                     get: async ({ challenges }) => {

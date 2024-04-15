@@ -6,7 +6,7 @@ const singlechallenge = {
         {
             type: "import",
             import: {
-                runTests: "./testHarness.mjs",
+                runTests: "./testHarness.quickjs.mjs",
             },
         },
         {

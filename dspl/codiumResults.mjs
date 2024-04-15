@@ -11,3 +11,13 @@ console.log(
     "Public Tests Passed",
     challenges.filter((c) => c.public_tests_passed).length
 );
+console.log(
+    "Private Tests Passed",
+    challenges
+        .map((c) =>
+            c.public_test_results.filter(
+                (r) => r.status !== "pass" && r.status !== "fail"
+            )
+        )
+        .filter((r) => r.length > 0)
+);
