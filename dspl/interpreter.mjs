@@ -569,7 +569,7 @@ async function executeStep(
         context.blackboard,
         context.item
     );
-    const originalHistoryLength = context.history.length; //xw + 1; //FIXME, this is a hack to get the length of the history before the element is executed
+    const originalHistoryLength = context.history.length;
     const newContext = await elementModule.execute(
         resolvedElementData,
         context,
@@ -604,12 +604,13 @@ async function executeStep(
     if (parse) {
         for (const [variableName, path] of Object.entries(parse)) {
             if (typeof path === "function") {
-                context.blackboard[variableName] = await path(
-                    context.response,
-                    context.blackboard
-                );
                 if (context.item) {
                     context.item[variableName] = await path(
+                        context.response,
+                        context.blackboard
+                    );
+                } else {
+                    context.blackboard[variableName] = await path(
                         context.response,
                         context.blackboard
                     );
