@@ -165,27 +165,24 @@ const elementModules = {
     init: {
         async execute({ init }, context) {
             context.blackboard = mem(init);
-            return context;
+            return [];
         },
     },
     prompt: {
         async execute({ content, ...config }, context) {
-            // console.log("Prompt content:", content);
-
             const processedContent = await moe.compile(content, {
                 asyncTemplate: true,
             })(context.blackboard);
             context.history.push({ role: "user", content: processedContent });
-            context = await this.runLLM(context, config);
-
-            return context;
+            const messages = await this.runLLM(context, config);
+            return messages;
         },
         async runLLM(context, config = {}) {
-            context.history = await llm(context.history, {
+            const newMessages = await llm(context.history, {
                 ...context.blackboard.$.prompt,
                 ...config,
             });
-            return context;
+            return newMessages.slice(-1);
         },
     },
     do: {
@@ -215,59 +212,25 @@ const elementModules = {
                 const historyStartingLength = context.history.length;
 
                 try {
-                    await executeDSPL(clonedDspl, childContext);
+                    const { messages } = await executeDSPL(
+                        clonedDspl,
+                        childContext
+                    );
+                    return messages;
                 } catch (error) {
                     console.error("Error in child flow:", error);
-                    // Deno.exit();
-                    childContext.history.push({
-                        role: "system",
-                        content: `Error in child flow: ${error.message}`,
-                    });
-                }
-
-                if (extract) {
-                    for (const [parentKey, childKey] of Object.entries(
-                        extract
-                    )) {
-                        context.blackboard[parentKey] = await childContext
-                            .blackboard[childKey];
-                    }
-                }
-
-                if (history === "none" || forConfig?.concurrency > 1) {
-                    const hiddenHistory = childContext.history
-                        .slice(historyStartingLength)
-                        .map((message) => ({
-                            ...message,
-                            meta: { hidden: true },
-                        }));
-                    context.history.push(...hiddenHistory);
-                } else if (history === "hidden") {
-                    const hiddenHistory = childContext.history
-                        .slice(historyStartingLength, -1)
-                        .map((message) => ({
-                            ...message,
-                            meta: { hidden: true },
-                        }));
-                    context.history.push(
-                        ...hiddenHistory,
-                        childContext.history[childContext.history.length - 1]
-                    );
-                } else if (history === "flat") {
-                    // console.log("FLAT HISTORY");
-                    context.history.push(
-                        ...childContext.history.slice(historyStartingLength)
-                    );
-                } else {
-                    context.history.push(
-                        childContext.history.slice(historyStartingLength)
-                    );
+                    return [
+                        {
+                            role: "system",
+                            content: `Error in child flow: ${error.message}`,
+                        },
+                    ];
                 }
             };
 
-            if (forConfig) {
-                //TODO: we need to fix array schemas
+            let messages = [];
 
+            if (forConfig) {
                 const { each, in: arrayName } = forConfig;
 
                 const limit = pLimit(forConfig.concurrency || 1);
@@ -277,7 +240,8 @@ const elementModules = {
                 const promises = processedArray.map((item) =>
                     limit(() => executeFlow(item))
                 );
-                await Promise.all(promises);
+                const results = await Promise.all(promises);
+                messages = results.flat();
             } else if (whileConfig) {
                 const { type, filter, max = 5 } = whileConfig;
                 const guardModule = guardModules[type];
@@ -292,18 +256,19 @@ const elementModules = {
                     const { success } = await guardModule(context, { filter });
 
                     if (!success) {
-                        // console.log("Guard failed, breaking out of loop");
                         break;
                     }
                     if (i < max) {
-                        await executeFlow();
+                        const flowMessages = await executeFlow();
+                        messages.push(...flowMessages);
                     }
                 }
             } else {
-                await executeFlow();
+                const flowMessages = await executeFlow();
+                messages.push(...flowMessages);
             }
 
-            return context;
+            return messages;
         },
     },
     image: {
@@ -353,7 +318,7 @@ const elementModules = {
                 console.error("Error generating image:", error);
             }
 
-            return context;
+            return [];
         },
     },
     epub: {
@@ -401,14 +366,12 @@ const elementModules = {
                 console.error("Error generating EPUB file:", error, chapters);
             }
 
-            return context;
+            return [];
         },
     },
     message: {
         async execute({ role, content }, context) {
-            // console.log("Message content:", content);
-            context.history.push({ role, content });
-            return context;
+            return [{ role, content }];
         },
     },
     import: {
@@ -417,7 +380,7 @@ const elementModules = {
                 const importedModule = await import(value);
                 globalThis[key] = context.blackboard[key] = importedModule[key];
             }
-            return context;
+            return [];
         },
     },
 };
@@ -486,14 +449,14 @@ async function executeDSPL(
     }
 ) {
     const dsplObject = dsplCode;
+    let messages = [];
 
     for (const element of dsplObject.elements) {
-        context = await executeStep(element, context);
+        const elementMessages = await executeStep(element, context);
+        messages.push(...elementMessages);
     }
 
-    // console.log("DSPL execution completed successfully!");
-    // console.log("Final context:", context);
-    return context;
+    return { messages, context };
 }
 
 async function executeStep(
@@ -563,23 +526,18 @@ async function executeStep(
             return value;
         }
     };
-
     const resolvedElementData = await resolveBlackboardReferences(
         elementData,
         context.blackboard,
         context.item
     );
     const originalHistoryLength = context.history.length;
-    const newContext = await elementModule.execute(
-        resolvedElementData,
-        context,
-        {
-            ...config,
-            ...resolvedElementData,
-        }
-    );
+    const messages = await elementModule.execute(resolvedElementData, context, {
+        ...config,
+        ...resolvedElementData,
+    });
 
-    context.history = newContext.history;
+    context.history.push(...messages);
 
     const response = context.history.slice(-1).pop()?.content;
     // console.log("Element response:", JSON.stringify(response, null, 2));
@@ -626,7 +584,11 @@ async function executeStep(
     }
 
     if (set) {
-        context.blackboard[set] = context.history.slice(-1).pop().content;
+        if (context.item) {
+            context.item[set] = context.history.slice(-1).pop().content;
+        } else {
+            context.blackboard[set] = context.history.slice(-1).pop().content;
+        }
     }
 
     // console.log("Element execution completed successfully!", context);
@@ -703,11 +665,12 @@ async function executeStep(
                 guardFailed = true;
                 if (elementData.onFail) {
                     for (const failElement of elementData.onFail) {
-                        context = await executeStep(
+                        const messages = await executeStep(
                             failElement,
                             context,
                             config
                         );
+                        context.history.push(...messages);
                     }
                 }
             }
@@ -717,17 +680,19 @@ async function executeStep(
 
     if (!guardFailed && elementData.onSuccess) {
         for (const successElement of elementData.onSuccess) {
-            context = await executeStep(successElement, context, config);
+            const messages = await executeStep(successElement, context, config);
+            context.history.push(...messages);
         }
     }
 
     if (elementData.finally) {
         for (const finallyElement of elementData.finally) {
-            context = await executeStep(finallyElement, context, config);
+            const messages = await executeStep(finallyElement, context, config);
+            context.history.push(...messages);
         }
     }
 
-    return context;
+    return context.history.slice(originalHistoryLength);
 }
 
 const makeList = async (
