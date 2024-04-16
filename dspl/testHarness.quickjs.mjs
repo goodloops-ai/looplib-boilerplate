@@ -48,7 +48,7 @@ export const runTest = async (code, test, timeout = 3000) => {
         vm.unwrapResult(vm.evalCode(evalCode, "eval.js")).dispose();
         result = JSON.parse(vm.getString(vm.getProp(vm.global, "result")));
     } catch (e) {
-        console.error(e.stack, e.message);
+        // console.error(e.stack, e.message);
         result = {
             status: "error",
             message: "An error occurred while running the test: " + e,
