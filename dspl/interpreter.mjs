@@ -124,7 +124,7 @@ const llm = async (history, config, file) => {
             console.log("Show hidden messages enabled!");
             console.log(JSON.stringify(messages, null, 2));
             console.log(JSON.stringify(history, null, 2));
-            Deno.exit();
+            // Deno.exit();
         }
         const openai = new OpenAI({
             dangerouslyAllowBrowser: true,
