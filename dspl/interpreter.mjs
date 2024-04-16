@@ -150,7 +150,7 @@ const llm = async (history, config, file) => {
             const assistantMessages = response.choices.map(({ message }) => {
                 // message.content = JSON.parse(message.content);
                 message.meta = {
-                    history: history.slice(0),
+                    history: messages.slice(0),
                 };
                 return message;
             });
@@ -175,7 +175,15 @@ const elementModules = {
     init: {
         async execute({ init }, context) {
             context.blackboard = mem(init);
-            return [];
+            return [
+                {
+                    role: "system",
+                    content: "Blackboard initialized successfully!",
+                    meta: {
+                        hidden: true,
+                    },
+                },
+            ];
         },
     },
     prompt: {
@@ -234,14 +242,13 @@ const elementModules = {
                         childContext
                     );
                     return {
-                        history: cacheHistory,
-                        context,
+                        blackboard: await context.blackboard._obj,
+                        item: await context.item?._obj,
                         steps,
                     };
                 } catch (error) {
                     console.error("Error in child flow:", error);
                     return {
-                        history: cacheHistory,
                         context: childContext,
                         steps: [
                             {
@@ -348,7 +355,15 @@ const elementModules = {
                 console.error("Error generating image:", error);
             }
 
-            return [];
+            return [
+                {
+                    role: "system",
+                    content: `Image generated successfully. Saved to ${imagePath}`,
+                    meta: {
+                        hidden: true,
+                    },
+                },
+            ];
         },
     },
     epub: {
@@ -396,7 +411,15 @@ const elementModules = {
                 console.error("Error generating EPUB file:", error, chapters);
             }
 
-            return [];
+            return [
+                {
+                    role: "system",
+                    content: `EPUB file generated successfully! Saved to ${epubPath}`,
+                    meta: {
+                        hidden: true,
+                    },
+                },
+            ];
         },
     },
     message: {
@@ -410,7 +433,15 @@ const elementModules = {
                 const importedModule = await import(value);
                 globalThis[key] = context.blackboard[key] = importedModule[key];
             }
-            return [];
+            return [
+                {
+                    role: "system",
+                    content: "Modules imported successfully!",
+                    meta: {
+                        hidden: true,
+                    },
+                },
+            ];
         },
     },
 };
@@ -490,10 +521,10 @@ async function executeDSPL(
         const elementMessages = await executeStep(element, context);
         context.history.push(...elementMessages);
         steps.push({
-            history,
             blackboard: await context.blackboard._obj,
+            item: await context.item?._obj,
             step: element,
-            messages: elementMessages,
+            trace: elementMessages,
         });
     }
 
@@ -764,7 +795,7 @@ async function executeStep(
             };
             const newMessages = await executeStep(
                 finallyElement,
-                context,
+                newContext,
                 config
             );
             messages.push(...newMessages);
