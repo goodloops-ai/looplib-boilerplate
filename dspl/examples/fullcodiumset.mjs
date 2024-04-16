@@ -270,9 +270,9 @@ Enclose your code in a markdown codeblock.`,
                             code: (response) =>
                                 /```(?:javascript|js)?\n([\s\S]*?)\n```/.exec(
                                     response
-                                )[1],
+                                )?.[1],
                         },
-                        retries: 0,
+                        retries: 1,
                         guards: [
                             {
                                 type: "filter",
@@ -290,66 +290,95 @@ Enclose your code in a markdown codeblock.`,
                                 type: "message",
                                 role: "user",
                                 content: `
-                            Total test results:
-                            {{await model.item.tests_passed}}
+Total test results:
+{{(await model.item.tests_passed) ? "Success" : "Fail"}}
 
-                            {{#each res in await model.item.public_test_results}}
-                               - Test Result: {{scope.index}} -
-                               {{#if await res.status == "pass"}}
-                               Success: {{await res.message}}. Congratulations, no errors detected!
-                               {{#elseif await res.error == "SyntaxError"}}
-                               Syntax Error Detected: {{await res.message}}. Please check your syntax.
-                               {{#elseif await res.error == "Timeout"}}
-                               Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
-                               {{#elseif await res.error == "RuntimeError"}}
-                               Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
-                               {{#elseif await res.error == "TypeError"}}
-                               Type Error: {{await res.message}}. Verify that your data types are correct.
-                               {{#else}}
-                               Unknown Error: {{await res.message}}. Review the code for potential issues.
-                               {{/if}}
-                           {{/each}}
-                            {{#each res in await model.item.private_test_results}}
-                               - Test Result: {{scope.index}} -
-                               {{#if await res.status == "pass"}}
-                               Success: {{await res.message}}. Congratulations, no errors detected!
-                               {{#elseif await res.error == "SyntaxError"}}
-                               Syntax Error Detected: {{await res.message}}. Please check your syntax.
-                               {{#elseif await res.error == "Timeout"}}
-                               Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
-                               {{#elseif await res.error == "RuntimeError"}}
-                               Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
-                               {{#elseif await res.error == "TypeError"}}
-                               Type Error: {{await res.message}}. Verify that your data types are correct.
-                               {{#else}}
-                               Unknown Error: {{await res.message}}. Review the code for potential issues.
-                               {{/if}}
-                           {{/each}}
-                           {{#each res in await model.item.generated_test_results}}
-                               - Test Result: {{scope.index}} -
-                               {{#if await res.status == "pass"}}
-                               Success: {{await res.message}}. Congratulations, no errors detected!
-                               {{#elseif await res.error == "SyntaxError"}}
-                               Syntax Error Detected: {{await res.message}}. Please check your syntax.
-                               {{#elseif await res.error == "Timeout"}}
-                               Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
-                               {{#elseif await res.error == "RuntimeError"}}
-                               Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
-                               {{#elseif await res.error == "TypeError"}}
-                               Type Error: {{await res.message}}. Verify that your data types are correct.
-                               {{#else}}
-                               Unknown Error: {{await res.message}}. Review the code for potential issues.
-                               {{/if}}
-                           {{/each}}
-                           `,
+Public tests:
+{{#each res in await model.item.public_test_results}}
+    - Test Result: {{scope.index}} -
+    {{#if await res.status == "pass"}}
+    Success: {{await res.message}}. Congratulations, no errors detected!
+    {{#elseif await res.error == "SyntaxError"}}
+    Syntax Error Detected: {{await res.message}}. Please check your syntax.
+    {{#elseif await res.error == "Timeout"}}
+    Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
+    {{#elseif await res.error == "RuntimeError"}}
+    Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
+    {{#elseif await res.error == "TypeError"}}
+    Type Error: {{await res.message}}. Verify that your data types are correct.
+    {{#else}}
+    Unknown Error: {{await res.message}}. Review the code for potential issues.
+    {{/if}}
+{{/each}}
+
+Private Tests:
+{{#each res in await model.item.private_test_results}}
+    - Test Result: {{scope.index}} -
+    {{#if await res.status == "pass"}}
+    Success: {{await res.message}}. Congratulations, no errors detected!
+    {{#elseif await res.error == "SyntaxError"}}
+    Syntax Error Detected: {{await res.message}}. Please check your syntax.
+    {{#elseif await res.error == "Timeout"}}
+    Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
+    {{#elseif await res.error == "RuntimeError"}}
+    Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
+    {{#elseif await res.error == "TypeError"}}
+    Type Error: {{await res.message}}. Verify that your data types are correct.
+    {{#else}}
+    Unknown Error: {{await res.message}}. Review the code for potential issues.
+    {{/if}}
+{{/each}}
+
+Generated Tests:
+{{#each res in await model.item.generated_test_results}}
+    - Test Result: {{scope.index}} -
+    {{#if await res.status == "pass"}}
+    Success: {{await res.message}}. Congratulations, no errors detected!
+    {{#elseif await res.error == "SyntaxError"}}
+    Syntax Error Detected: {{await res.message}}. Please check your syntax.
+    {{#elseif await res.error == "Timeout"}}
+    Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
+    {{#elseif await res.error == "RuntimeError"}}
+    Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
+    {{#elseif await res.error == "TypeError"}}
+    Type Error: {{await res.message}}. Verify that your data types are correct.
+    {{#else}}
+    Unknown Error: {{await res.message}}. Review the code for potential issues.
+    {{/if}}
+{{/each}}
+`,
                             },
                         ],
                         onFail: [
-                            // omitted in this case
+                            {
+                                type: "message",
+                                role: "user",
+                                content: `Total test results:
+{{(await model.item.tests_passed) ? "Success" : "Fail"}}
+
+Public tests:
+{{#each res in await model.item.public_test_results}}
+    - Test Result: {{scope.index}} -
+    {{#if await res.status == "pass"}}
+    Success: {{await res.message}}. Congratulations, no errors detected!
+    {{#elseif await res.error == "SyntaxError"}}
+    Syntax Error Detected: {{await res.message}}. Please check your syntax.
+    {{#elseif await res.error == "Timeout"}}
+    Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
+    {{#elseif await res.error == "RuntimeError"}}
+    Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
+    {{#elseif await res.error == "TypeError"}}
+    Type Error: {{await res.message}}. Verify that your data types are correct.
+    {{#else}}
+    Unknown Error: {{await res.message}}. Review the code for potential issues.
+    {{/if}}
+{{/each}}`,
+                            },
                         ],
                         finally: [
                             {
                                 type: "prompt",
+                                showHidden: true,
                                 set: "summary",
                                 content: `We are now done with this challenge.
 State the challenge name and index. List the various tries, the result (success, partial, fail) of each, and what changed between the versions. Success means all tests passed, partial success means all public tests passed, and fail means all public tests did not pass. For each try, give the numbers of each type of test that was passed.

@@ -24,6 +24,7 @@ const llm = async (history, config, file) => {
         temperature,
         max_tokens = 4000,
         response_format,
+        showHidden,
         n = 1,
     } = config;
 
@@ -38,7 +39,7 @@ const llm = async (history, config, file) => {
 
         history
             .filter((item) => !Array.isArray(item))
-            .filter((item) => item.meta?.hidden !== true)
+            .filter((item) => showHidden || item.meta?.hidden !== true)
             .forEach(({ role, content }) => {
                 if (role === "system") {
                     systemMessage += content + "\n";
@@ -105,7 +106,7 @@ const llm = async (history, config, file) => {
     } else {
         const messages = history
             .filter((item) => !Array.isArray(item))
-            .filter((item) => item.meta?.hidden !== true)
+            .filter((item) => showHidden || item.meta?.hidden !== true)
             .map(({ role, content }) => ({ role, content }))
             .map(({ role, content }) => {
                 content = !(typeof content === "string")
@@ -119,6 +120,12 @@ const llm = async (history, config, file) => {
         //     content: JSON_INSTRUCT(),
         // });
 
+        if (showHidden) {
+            console.log("Show hidden messages enabled!");
+            console.log(JSON.stringify(messages, null, 2));
+            console.log(JSON.stringify(history, null, 2));
+            Deno.exit();
+        }
         const openai = new OpenAI({
             dangerouslyAllowBrowser: true,
             apiKey: Deno.env.get("OPENAI_API_KEY"),
@@ -142,6 +149,9 @@ const llm = async (history, config, file) => {
 
             const assistantMessages = response.choices.map(({ message }) => {
                 // message.content = JSON.parse(message.content);
+                message.meta = {
+                    history: history.slice(0),
+                };
                 return message;
             });
 
@@ -173,8 +183,14 @@ const elementModules = {
             const processedContent = await moe.compile(content, {
                 asyncTemplate: true,
             })(context.blackboard);
-            context.history.push({ role: "user", content: processedContent });
-            const messages = await this.runLLM(context, config);
+            const newContext = {
+                ...context,
+                history: [
+                    ...context.history,
+                    { role: "user", content: processedContent },
+                ],
+            };
+            const messages = await this.runLLM(newContext, config);
             return messages;
         },
         async runLLM(context, config = {}) {
@@ -182,7 +198,7 @@ const elementModules = {
                 ...context.blackboard.$.prompt,
                 ...config,
             });
-            return newMessages.slice(-1);
+            return newMessages.slice(-2);
         },
     },
     do: {
@@ -209,26 +225,43 @@ const elementModules = {
                     item,
                 };
 
+                const cacheHistory = context.history.slice(0);
                 const historyStartingLength = context.history.length;
 
                 try {
-                    const { messages, context } = await executeDSPL(
+                    const { steps, context } = await executeDSPL(
                         clonedDspl,
                         childContext
                     );
-                    return context.history.slice(historyStartingLength);
+                    return {
+                        history: cacheHistory,
+                        context,
+                        steps,
+                    };
                 } catch (error) {
                     console.error("Error in child flow:", error);
-                    return [
-                        {
-                            role: "system",
-                            content: `Error in child flow: ${error.message}, ${error.stack}`,
-                        },
-                    ];
+                    return {
+                        history: cacheHistory,
+                        context: childContext,
+                        steps: [
+                            {
+                                history: cacheHistory,
+                                step: {
+                                    type: "error",
+                                },
+                                messages: [
+                                    {
+                                        role: "system",
+                                        content: `Error in child flow: ${error.message}, ${error.stack}`,
+                                    },
+                                ],
+                            },
+                        ],
+                    };
                 }
             };
 
-            let messages = [];
+            let runs = [];
 
             if (forConfig) {
                 const { each, in: arrayName } = forConfig;
@@ -240,8 +273,7 @@ const elementModules = {
                 const promises = processedArray.map((item) =>
                     limit(() => executeFlow(item))
                 );
-                const results = await Promise.all(promises);
-                messages = results;
+                runs = await Promise.all(promises);
             } else if (whileConfig) {
                 const { type, filter, max = 5 } = whileConfig;
                 const guardModule = guardModules[type];
@@ -259,16 +291,14 @@ const elementModules = {
                         break;
                     }
                     if (i < max) {
-                        const flowMessages = await executeFlow();
-                        messages.push(flowMessages);
+                        runs.push(await executeFlow());
                     }
                 }
             } else {
-                const flowMessages = await executeFlow();
-                messages.push(flowMessages);
+                runs.push(await executeFlow());
             }
 
-            return messages;
+            return runs;
         },
     },
     image: {
@@ -449,18 +479,25 @@ async function executeDSPL(
     }
 ) {
     const dsplObject = dsplCode;
-    let messages = [];
+    let steps = [];
 
     for (const element of dsplObject.elements) {
+        const history = context.history.slice(0);
         const newContext = {
-            history: messages,
+            history,
         };
         newContext.blackboard = context.blackboard;
         const elementMessages = await executeStep(element, context);
         context.history.push(...elementMessages);
+        steps.push({
+            history,
+            blackboard: await context.blackboard._obj,
+            step: element,
+            messages: elementMessages,
+        });
     }
 
-    return { messages, context };
+    return { steps, context };
 }
 
 async function executeStep(
@@ -472,7 +509,7 @@ async function executeStep(
     const { type, parse, set, ...elementData } = element;
     const elementModule = elementModules[type];
 
-    const messages = context.history.slice(0);
+    let messages = context.history.slice(0);
 
     if (!elementModule) {
         throw new Error(`Unsupported element type: ${type}`);
@@ -630,14 +667,14 @@ async function executeStep(
             if (retries > 0) {
                 if (guard.policy === "retry") {
                     messages = messages.slice(0, originalHistoryLength).concat(
-                        context.history
-                            .slice(originalHistoryLength)
-                            .map((message) => {
-                                if (!message.meta) {
-                                    message.meta = { hidden: true };
-                                }
-                                return message;
-                            })
+                        messages.slice(originalHistoryLength).map((message) => {
+                            if (!message.meta) {
+                                message.meta = { hidden: true };
+                            } else if (!message.meta.hidden) {
+                                message.meta.hidden = true;
+                            }
+                            return message;
+                        })
                     );
                     const newContext = {
                         ...context,
@@ -692,7 +729,7 @@ async function executeStep(
                         };
                         const newMessages = await executeStep(
                             failElement,
-                            context,
+                            newContext,
                             config
                         );
 

@@ -4,17 +4,17 @@ const outputfile = Deno.args[1];
 
 const code = await import(codefile);
 
-const { messages, context: result } = await executeDSPL(code.default);
-
-console.log(JSON.stringify(await result.blackboard._obj, null, 2));
+const { steps, context } = await executeDSPL(code.default);
 
 if (Deno.args[1]) {
     await Deno.writeTextFile(
         outputfile,
         JSON.stringify(
             {
-                blackboard: await result.blackboard._obj,
-                history: result.history,
+                context: {
+                    blackboard: await context.blackboard._obj,
+                },
+                steps,
             },
             null,
             2
