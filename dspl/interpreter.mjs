@@ -134,28 +134,24 @@ const llm = async (history, config, file) => {
         });
 
         try {
-            // console.log("Messages:", messages);
             const response = await openai.chat.completions.create({
                 model,
                 temperature,
                 max_tokens,
                 response_format,
-                // response_format: {
-                //     type: "json_object",
-                // },
                 messages,
                 n,
             });
 
-            // console.log("Response:", response);
-
             const assistantMessages = response.choices.map(({ message }) => {
                 // message.content = JSON.parse(message.content);
-                if (META_INCLUDE_HISTORY) {
-                    message.meta = {
-                        history: messages.slice(0),
-                    };
-                }
+
+                message.meta = {
+                    history: messages
+                        .slice(0)
+                        .map(({ content, role }) => ({ content, role })),
+                };
+
                 return message;
             });
 
@@ -206,11 +202,12 @@ const elementModules = {
             return messages;
         },
         async runLLM(context, config = {}) {
+            const originalHistory = context.history.slice(0).length;
             const newMessages = await llm(context.history, {
                 ...context.blackboard.$.prompt,
                 ...config,
             });
-            return newMessages.slice(-2);
+            return newMessages.slice(originalHistory);
         },
     },
     do: {
