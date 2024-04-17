@@ -146,11 +146,13 @@ const llm = async (history, config, file) => {
             const assistantMessages = response.choices.map(({ message }) => {
                 // message.content = JSON.parse(message.content);
 
-                message.meta = {
-                    history: messages
-                        .slice(0)
-                        .map(({ content, role }) => ({ content, role })),
-                };
+                if (META_INCLUDE_HISTORY) {
+                    message.meta = {
+                        history: messages
+                            .slice(0)
+                            .map(({ content, role }) => ({ content, role })),
+                    };
+                }
 
                 return message;
             });
@@ -234,6 +236,8 @@ const elementModules = {
                     item,
                 };
 
+                // const beginSnapshot = await context.blackboard._obj;
+
                 const cacheHistory = context.history.slice(0);
                 const historyStartingLength = context.history.length;
 
@@ -242,8 +246,9 @@ const elementModules = {
                         clonedDspl,
                         childContext
                     );
+                    const newBlackboard = await context.blackboard._obj;
                     return {
-                        blackboard: await context.blackboard._obj,
+                        blackboard: newBlackboard,
                         item: await context.item?._obj,
                         steps,
                     };
@@ -523,7 +528,6 @@ async function executeDSPL(
         context.history.push(...elementMessages);
         steps.push({
             blackboard: await context.blackboard._obj,
-            item: await context.item?._obj,
             step: element,
             trace: elementMessages,
         });
@@ -836,6 +840,8 @@ Ensure that the response is a valid JSON object, and each item in the array is a
         },
         file
     );
+
+    console.log(res);
     const response = res.slice(-1).pop().content.response;
 
     try {
