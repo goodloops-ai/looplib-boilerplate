@@ -18,6 +18,8 @@ const JSON_INSTRUCT = (md) =>
     }, with no additional text.`;
 
 const llm = async (history, config, file) => {
+    const META_INCLUDE_HISTORY =
+        Deno.env.get("META_INCLUDE_HISTORY") === "true";
     const {
         apiKey,
         model: _model,
@@ -149,9 +151,11 @@ const llm = async (history, config, file) => {
 
             const assistantMessages = response.choices.map(({ message }) => {
                 // message.content = JSON.parse(message.content);
-                message.meta = {
-                    history: messages.slice(0),
-                };
+                if (META_INCLUDE_HISTORY) {
+                    message.meta = {
+                        history: messages.slice(0),
+                    };
+                }
                 return message;
             });
 
