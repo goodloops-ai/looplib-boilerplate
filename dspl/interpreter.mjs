@@ -7,6 +7,7 @@ import { dirname } from "https://deno.land/std/path/mod.ts";
 import epub from "https://deno.land/x/epubgen/mod.ts";
 import moe from "https://esm.sh/@toptensoftware/moe-js";
 import pLimit from "https://esm.sh/p-limit";
+import he from "https://esm.sh/he";
 
 // import EpubGenerator from "https://esm.sh/epub-gen";
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
@@ -18,8 +19,7 @@ const JSON_INSTRUCT = (md) =>
     }, with no additional text.`;
 
 const llm = async (history, config, file) => {
-    const META_INCLUDE_HISTORY =
-        Deno.env.get("META_INCLUDE_HISTORY") === "true";
+    const META_OMIT_HISTORY = Deno.env.get("META_OMIT_HISTORY") === "true";
     const {
         apiKey,
         model: _model,
@@ -106,14 +106,17 @@ const llm = async (history, config, file) => {
             return history;
         }
     } else {
-        const messages = history
+        let messages = history
             .filter((item) => !Array.isArray(item))
+            .filter((item) => item.content)
             .filter((item) => showHidden || item.meta?.hidden !== true)
             .map(({ role, content }) => ({ role, content }))
             .map(({ role, content }) => {
                 content = !(typeof content === "string")
                     ? JSON.stringify(content, null, 2)
                     : content;
+
+                role = role || "system";
 
                 return { role, content };
             });
@@ -134,11 +137,20 @@ const llm = async (history, config, file) => {
         });
 
         try {
+            let rf = response_format;
+            if (config.mode === "json") {
+                rf = { type: "json_object" };
+                messages = messages.concat({
+                    role: "system",
+                    content: JSON_INSTRUCT(),
+                });
+            }
+            console.log("Messages:", messages);
             const response = await openai.chat.completions.create({
                 model,
                 temperature,
                 max_tokens,
-                response_format,
+                response_format: rf,
                 messages,
                 n,
             });
@@ -146,12 +158,16 @@ const llm = async (history, config, file) => {
             const assistantMessages = response.choices.map(({ message }) => {
                 // message.content = JSON.parse(message.content);
 
-                if (META_INCLUDE_HISTORY) {
+                if (!META_OMIT_HISTORY) {
                     message.meta = {
                         history: messages
                             .slice(0)
                             .map(({ content, role }) => ({ content, role })),
                     };
+                }
+
+                if (config.mode === "json") {
+                    message.content = JSON.parse(message.content);
                 }
 
                 return message;
@@ -190,9 +206,11 @@ const elementModules = {
     },
     prompt: {
         async execute({ content, ...config }, context) {
-            const processedContent = await moe.compile(content, {
-                asyncTemplate: true,
-            })(context.blackboard);
+            const processedContent = he.decode(
+                await moe.compile(content, {
+                    asyncTemplate: true,
+                })(context.blackboard)
+            );
             const newContext = {
                 ...context,
                 history: [
@@ -230,6 +248,7 @@ const elementModules = {
             });
 
             const executeFlow = async (item) => {
+                console.log("Executing flow for item:", item);
                 const childContext = {
                     history: [...context.history],
                     blackboard: context.blackboard,
@@ -282,9 +301,13 @@ const elementModules = {
                 const limit = pLimit(forConfig.concurrency || 1);
                 const array = await context.blackboard[arrayName];
                 const processedArray = await makeList(array, context, config);
-
+                console.log("Processed array:", processedArray);
                 const promises = processedArray.map((item) =>
-                    limit(() => executeFlow(item))
+                    limit(async () => {
+                        const res = await executeFlow(item);
+                        console.log("Processed item:", res);
+                        return res;
+                    })
                 );
                 runs = await Promise.all(promises);
             } else if (whileConfig) {
@@ -459,7 +482,7 @@ const guardModules = {
             role: "user",
             content: `${guard.filter}\n respond with a json object with two keys, message (a string explaining your reasoning and suggestions) and success: (true or false)`,
         };
-        const ratingContext = await elementModules.prompt.runLLM(
+        const ratingMessages = await elementModules.prompt.runLLM(
             {
                 history: [...context.history, ratingPrompt],
                 blackboard: context.blackboard,
@@ -467,7 +490,7 @@ const guardModules = {
             { response_format: { type: "json_object" } }
         );
 
-        const { success, message, ...rest } = ratingContext.history
+        const { success, message, ...rest } = ratingMessages
             .slice(-1)
             .pop().content;
 
@@ -525,6 +548,7 @@ async function executeDSPL(
         };
         newContext.blackboard = context.blackboard;
         const elementMessages = await executeStep(element, context);
+        console.log("Element messages:", elementMessages);
         context.history.push(...elementMessages);
         steps.push({
             blackboard: await context.blackboard._obj,
@@ -533,6 +557,7 @@ async function executeDSPL(
         });
     }
 
+    console.log("DSPL execution completed successfully!", context.blackboard);
     return { steps, context };
 }
 
@@ -542,6 +567,7 @@ async function executeStep(
     config = {},
     retries = element.retries || 0
 ) {
+    console.log("Executing element:", element.type);
     const { type, parse, set, ...elementData } = element;
     const elementModule = elementModules[type];
 
@@ -580,7 +606,9 @@ async function executeStep(
             //     blackboard,
             //     await blackboard?.description
             // );
-            return await template({ $: blackboard, item: item });
+            return await he.decode(
+                await template({ $: blackboard, item: item })
+            );
         } else if (Array.isArray(value)) {
             return Promise.all(
                 value.map((v) =>
@@ -668,9 +696,9 @@ async function executeStep(
 
     if (set) {
         if (context.item) {
-            context.item[set] = context.history.slice(-1).pop().content;
+            context.item[set] = response?.response || response;
         } else {
-            context.blackboard[set] = context.history.slice(-1).pop().content;
+            context.blackboard[set] = response?.response || response;
         }
     }
 
@@ -842,7 +870,7 @@ Ensure that the response is a valid JSON object, and each item in the array is a
     );
 
     console.log(res);
-    const response = res.slice(-1).pop().content.response;
+    const response = res.slice(-1).pop().content;
 
     try {
         return makeList(response.data || [], context, config);

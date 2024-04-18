@@ -31,7 +31,12 @@ export const importJson = async (pathOrObj, def = {}) => {
     }
 };
 
-async function resolve(obj) {
+async function resolve(obj, seen = new Set()) {
+    if (seen.has(obj)) {
+        throw new Error("Circular reference detected");
+    }
+    seen.add(obj);
+    console.log("Resolving object:", obj);
     if (!obj) return obj;
     if (obj?._mem) return obj._obj;
     // Check if obj is a promise and await it if so

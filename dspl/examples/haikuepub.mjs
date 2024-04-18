@@ -13,6 +13,7 @@ const haikuEpubFlow = {
         },
         {
             type: "prompt",
+            mode: "json",
             content: "Write a haiku about a beautiful sunset.",
             parse: {
                 haiku: "$.haiku",

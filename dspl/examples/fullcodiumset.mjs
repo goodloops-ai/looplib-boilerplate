@@ -39,26 +39,26 @@ const fullchallenges = {
                                         "pass",
                                     ]),
                             },
-                            yaml: {
-                                get: async ({
-                                    index,
-                                    name,
-                                    description,
-                                    public_test_original,
-                                }) => {
-                                    // console.log(
-                                    //     "public_test_original",
-                                    //     public_test_original
-                                    // );
-                                    // Deno.exit(1);
-                                    return YAML.stringify({
-                                        index,
-                                        name,
-                                        description,
-                                        public_tests: public_test_original,
-                                    });
-                                },
-                            },
+                            // yaml: {
+                            //     get: async ({
+                            //         index,
+                            //         name,
+                            //         description,
+                            //         public_test_original,
+                            //     }) => {
+                            //         // console.log(
+                            //         //     "public_test_original",
+                            //         //     public_test_original
+                            //         // );
+                            //         // Deno.exit(1);
+                            //         return YAML.stringify({
+                            //             index,
+                            //             name,
+                            //             description,
+                            //             public_tests: public_test_original,
+                            //         });
+                            //     },
+                            // },
                             json: {
                                 get: async ({
                                     index,
@@ -329,23 +329,6 @@ Private Tests:
     {{/if}}
 {{/each}}
 
-Generated Tests:
-{{#each res in await model.item.generated_test_results}}
-    - Test Result: {{scope.index}} -
-    {{#if await res.status == "pass"}}
-    Success: {{await res.message}}. Congratulations, no errors detected!
-    {{#elseif await res.error == "SyntaxError"}}
-    Syntax Error Detected: {{await res.message}}. Please check your syntax.
-    {{#elseif await res.error == "Timeout"}}
-    Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
-    {{#elseif await res.error == "RuntimeError"}}
-    Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
-    {{#elseif await res.error == "TypeError"}}
-    Type Error: {{await res.message}}. Verify that your data types are correct.
-    {{#else}}
-    Unknown Error: {{await res.message}}. Review the code for potential issues.
-    {{/if}}
-{{/each}}
 `,
                             },
                         ],

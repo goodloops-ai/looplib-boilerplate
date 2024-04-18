@@ -25,12 +25,12 @@ const poemdspl = {
             for: {
                 each: "animal",
                 in: "animals",
+                concurrency: 10,
             },
             dspl: {
                 elements: [
                     {
                         type: "prompt",
-                        mode: "json",
                         content:
                             "write me a short children's book poem about {{await model.item.animal}}",
                         set: "poem",

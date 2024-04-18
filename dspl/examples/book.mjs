@@ -22,6 +22,7 @@ const bookWritingFlow = {
         },
         {
             type: "prompt",
+            mode: "json",
             content: `Create a detailed plot outline for a {{await model.$.numChapters}}-chapter book in the {{await model.$.writingStyle}} style, based on the following description:
 {{await model.$.bookDescription}}
 Each chapter should be at least 10 pages long.
@@ -42,6 +43,7 @@ organize your outline by chapter, with a brief description of the events that wi
                 elements: [
                     {
                         type: "prompt",
+                        mode: "json",
                         content:
                             "Write chapter {{await model.item.index}} of the book, ensuring it follows the plot outline and builds upon the previous chapters (if any). put it in the 'chapterText' key of your response.",
                         max_tokens: 4000,
@@ -52,6 +54,7 @@ organize your outline by chapter, with a brief description of the events that wi
                     },
                     {
                         type: "prompt",
+                        mode: "json",
                         content:
                             "Generate a concise and engaging title for this chapter based on its content. Respond with the title in the 'chapterTitle' key of your response.",
                         set: "chapterTitle",
@@ -64,6 +67,7 @@ organize your outline by chapter, with a brief description of the events that wi
         },
         {
             type: "prompt",
+            mode: "json",
             content: `Here is the plot for the book: {{await model.$.plotOutline}}
                 Respond with a great title for this book in the 'bookTitle' key of your response.`,
             set: "bookTitle",
@@ -73,6 +77,7 @@ organize your outline by chapter, with a brief description of the events that wi
         },
         {
             type: "prompt",
+            mode: "json",
             content:
                 "Describe the cover we should create, based on the plot. put it in the 'coverPrompt' key of your response. This should be two sentences long, maximum.",
             parse: {
