@@ -31,7 +31,7 @@ const path = Deno.args[0] || "./guardOutput";
 const nonce = Math.random().toString(36).substring(7);
 
 const report$ = new Operable(generateReport());
-const challenges$ = new Operable(getChallenges({ subset: [1] }));
+const challenges$ = new Operable(getChallenges({}));
 
 const workflow = new Operable(passThrough);
 
