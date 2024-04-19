@@ -1,5 +1,8 @@
 import { Mutex } from "https://esm.sh/async-mutex";
-import { getQuickJS } from "npm:quickjs-emscripten";
+import {
+    getQuickJS,
+    shouldInterruptAfterDeadline,
+} from "npm:quickjs-emscripten";
 
 const mutex = new Mutex();
 
