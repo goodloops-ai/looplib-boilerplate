@@ -39,26 +39,26 @@ const fullchallenges = {
                                         "pass",
                                     ]),
                             },
-                            // yaml: {
-                            //     get: async ({
-                            //         index,
-                            //         name,
-                            //         description,
-                            //         public_test_original,
-                            //     }) => {
-                            //         // console.log(
-                            //         //     "public_test_original",
-                            //         //     public_test_original
-                            //         // );
-                            //         // Deno.exit(1);
-                            //         return YAML.stringify({
-                            //             index,
-                            //             name,
-                            //             description,
-                            //             public_tests: public_test_original,
-                            //         });
-                            //     },
-                            // },
+                            yaml: {
+                                get: async ({
+                                    index,
+                                    name,
+                                    description,
+                                    public_test_original,
+                                }) => {
+                                    // console.log(
+                                    //     "public_test_original",
+                                    //     public_test_original
+                                    // );
+                                    // Deno.exit(1);
+                                    return YAML.stringify({
+                                        index,
+                                        name,
+                                        description,
+                                        public_tests: public_test_original,
+                                    });
+                                },
+                            },
                             json: {
                                 get: async ({
                                     index,
@@ -195,7 +195,7 @@ const fullchallenges = {
                         type: "message",
                         role: "system",
                         content:
-                            "You are a top-rated code assistant based on a cutting-edge version of GPT, with far greater capabilities than any prior GPT model.You always return code when requested, and always pay the closest attention to instructions and other elements pointed to by the prompt.You never return partial code, never give up, and never refuse to return code.",
+                            "You are a top-rated code assistant based on a cutting-edge version of GPT, with far greater capabilities than any prior GPT model. You always return code when requested, and always pay the closest attention to instructions and other elements pointed to by the prompt. You never return partial code, never give up, and never refuse to return code.",
                     },
                     // {
                     //     type: "message",
@@ -205,7 +205,7 @@ const fullchallenges = {
                     {
                         type: "message",
                         role: "user",
-                        content: "{{await model.item.json}}",
+                        content: "{{await model.item.yaml}}",
                     },
                     //                     {
                     //                         type: "message",

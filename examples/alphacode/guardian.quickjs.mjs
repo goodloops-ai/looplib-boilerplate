@@ -120,18 +120,18 @@ parse$.code.pipe(
     testResults$
 );
 
-parse$.noCode.pipe(
-    maxLoops(3, report$),
-    prompt({
-        prompt: `You are a corrector. Give yourself a novel name and use it as a handle when you respond.
-        
-        There was no markdown codeblock from which code could be extracted from the previous message. Please provide a code implementation in a markdown codeblock. Do your best to provide complete code, as that maximizes the chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
-        model: "gpt-4-turbo",
-        concurrency: 50,
-        temperature: 0.3,
-    }),
-    parse$
-);
+parse$.noCode.pipe(report$);
+//     maxLoops(3, report$),
+//     prompt({
+//         prompt: `You are a corrector. Give yourself a novel name and use it as a handle when you respond.
+
+//         There was no markdown codeblock from which code could be extracted from the previous message. Please provide a code implementation in a markdown codeblock. Do your best to provide complete code, as that maximizes the chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
+//         model: "gpt-4-turbo",
+//         concurrency: 50,
+//         temperature: 0.3,
+//     }),
+//     parse$
+// );
 
 parse$.codeWithComments.pipe(
     // Toggle which of these two blocks are active to enable/disable comment shibboleth
@@ -150,153 +150,156 @@ parse$.codeWithComments.pipe(
     // parse$
 );
 testResults$.pass.pipe(report$);
+testResults$.fail.pipe(report$);
+testResults$.timeout.pipe(report$);
+testResults$.error.pipe(report$);
 
-testResults$.fail.pipe(
-    maxLoops(5, report$),
-    prompt({
-        prompt: `You are an expert code architect. Give yourself a novel name and use it as a handle when you respond.
-        
-        The code provided failed the public test(s) seen above. 
-        Carefully read and reflect on the failure(s) and:
-        - identify what part of the code is at fault
-        - identify which problem constraints were not adhered to
-        
-        Review the progression so far including any previous attempts.
-        
-        Brainstorm on what approach is best to move forward:
-        - Targeted improvement on the latest version of the code
-        - Combining the best ideas from all prior version of the code
-        - Starting from scratch and pursuing a completely novel approach
+// testResults$.fail.pipe(
+//     maxLoops(5, report$),
+//     prompt({
+//         prompt: `You are an expert code architect. Give yourself a novel name and use it as a handle when you respond.
 
-        Do not fix the code until I ask you to.`,
-        model: "gpt-4-turbo",
-        concurrency: 50,
-        temperature: 0.4,
-    }),
-    prompt({
-        prompt: `You are an expert code debugger. Give yourself a novel name and use it as a handle when you respond.
-        
-        From the basis of the reasoning above, write a new version of the code in a markdown codeblock. Provide an implementation that is your best shot at passing all tests.
-        
-        Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.  
-        
-        Consider precomputing certain values to optimize the solution for efficiency, especially when dealing with large input sizes, could also be beneficial.  
+//         The code provided failed the public test(s) seen above.
+//         Carefully read and reflect on the failure(s) and:
+//         - identify what part of the code is at fault
+//         - identify which problem constraints were not adhered to
 
-        Reminder, the code:
-        - must be a standalone ECMAScript module with no dependencies.
-        - must have a function as the default export.
-        - must accept a single 'lines' argument (an array of input strings).
-        - must return a single array of output strings.
-        - must not mix BigInt and other types, must always use explicit conversions.
-        - should be commented to indicate which part of the code relates to which problem constraint.
-        - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
+//         Review the progression so far including any previous attempts.
 
-        Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
-        model: "gpt-4-turbo",
-        concurrency: 50,
-        temperature: 0.3,
-    }),
-    parse$
-);
+//         Brainstorm on what approach is best to move forward:
+//         - Targeted improvement on the latest version of the code
+//         - Combining the best ideas from all prior version of the code
+//         - Starting from scratch and pursuing a completely novel approach
 
-testResults$.timeout.pipe(
-    maxLoops(5, report$),
-    prompt({
-        prompt: `You are an algorithm expert. Give yourself a novel name and use it as a handle when you respond.
-        
-        The code took too long to execute and was terminated. 
-        
-        The code provided failed the public test(s) seen above. 
-        Carefully read and reflect on the failure(s) and:
-        - identify what part of the code is at fault
-        - identify which problem constraints were not adhered to
-        
-        Review the progression so far including any previous attempts.
-        
-        Brainstorm on what approach is best to move forward:
-        - Targeted improvement on the latest version of the code
-        - Combining the best ideas from all prior version of the code
-        - Starting from scratch and pursuing a completely novel approach
+//         Do not fix the code until I ask you to.`,
+//         model: "gpt-4-turbo",
+//         concurrency: 50,
+//         temperature: 0.4,
+//     }),
+//     prompt({
+//         prompt: `You are an expert code debugger. Give yourself a novel name and use it as a handle when you respond.
 
-        Do not fix the code until I ask you to.`,
-        model: "gpt-4-turbo",
-        concurrency: 50,
-        temperature: 0.4,
-    }),
-    prompt({
-        prompt: `You are an expert code optimizer. Give yourself a novel name and use it as a handle when you respond.
-        
-        Write the code as a markdown codeblock. Please do your best to provide an implementation that executes much more efficiently.  
-        
-        Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.  
-        
-        Consider precomputing certain values to optimize the solution for efficiency, especially when dealing with large input sizes, could also be beneficial.
+//         From the basis of the reasoning above, write a new version of the code in a markdown codeblock. Provide an implementation that is your best shot at passing all tests.
 
-        Reminder, the code:
-        - must be a standalone ECMAScript module with no dependencies.
-        - must have a function as the default export.
-        - must accept a single 'lines' argument (an array of input strings).
-        - must return a single array of output strings.
-        - must not mix BigInt and other types, must always use explicit conversions.
-        - should be commented to indicate which part of the code relates to which problem constraint.
-        - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
-        
-        Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
-        model: "gpt-4-turbo",
-        concurrency: 50,
-        temperature: 0.4,
-    }),
-    parse$
-);
+//         Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.
 
-testResults$.error.pipe(
-    maxLoops(5, report$),
-    prompt({
-        prompt: `You are an expert code reviewer. Give yourself a novel name and use it as a handle when you respond.        
-        
-        The code threw an error as seen above. 
-        
-        Carefully read and reflect on the failure(s) and:
-        - identify what part of the code is at fault
-        - identify which problem constraints were not adhered to
-        
-        Review the progression so far including any previous attempts.
-        
-        Brainstorm on what approach is best to move forward:
-        - Targeted improvement on the latest version of the code
-        - Combining the best ideas from all prior version of the code
-        - Starting from scratch and pursuing a completely novel approach
+//         Consider precomputing certain values to optimize the solution for efficiency, especially when dealing with large input sizes, could also be beneficial.
 
-        Do not fix the code until I ask you to.`,
-        model: "gpt-4-turbo",
-        concurrency: 50,
-        temperature: 0.4,
-    }),
-    prompt({
-        prompt: `You are an expert code corrector. Give yourself a novel name and use it as a handle when you respond.
-        
-        Write the code again, in full, as a markdown codeblock. Please do your best to provide an implementation that does not throw this or any other error. 
-        
-        Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.  
-        
-        Consider precomputing certain values to optimize the solution for efficiency, especially when dealing with large input sizes, could also be beneficial.
+//         Reminder, the code:
+//         - must be a standalone ECMAScript module with no dependencies.
+//         - must have a function as the default export.
+//         - must accept a single 'lines' argument (an array of input strings).
+//         - must return a single array of output strings.
+//         - must not mix BigInt and other types, must always use explicit conversions.
+//         - should be commented to indicate which part of the code relates to which problem constraint.
+//         - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
 
-        Reminder, the code:
-        - must be a standalone ECMAScript module with no dependencies.
-        - must have a function as the default export.
-        - must accept a single 'lines' argument (an array of input strings).
-        - must return a single array of output strings.
-        - must not mix BigInt and other types, must always use explicit conversions.
-        - should be commented to indicate which part of the code relates to which problem constraint.
-        - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
-        
-        Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
-        model: "gpt-4-turbo",
-        concurrency: 50,
-        temperature: 0.3,
-    }),
-    parse$
-);
+//         Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
+//         model: "gpt-4-turbo",
+//         concurrency: 50,
+//         temperature: 0.3,
+//     }),
+//     parse$
+// );
+
+// testResults$.timeout.pipe(
+//     maxLoops(5, report$),
+//     prompt({
+//         prompt: `You are an algorithm expert. Give yourself a novel name and use it as a handle when you respond.
+
+//         The code took too long to execute and was terminated.
+
+//         The code provided failed the public test(s) seen above.
+//         Carefully read and reflect on the failure(s) and:
+//         - identify what part of the code is at fault
+//         - identify which problem constraints were not adhered to
+
+//         Review the progression so far including any previous attempts.
+
+//         Brainstorm on what approach is best to move forward:
+//         - Targeted improvement on the latest version of the code
+//         - Combining the best ideas from all prior version of the code
+//         - Starting from scratch and pursuing a completely novel approach
+
+//         Do not fix the code until I ask you to.`,
+//         model: "gpt-4-turbo",
+//         concurrency: 50,
+//         temperature: 0.4,
+//     }),
+//     prompt({
+//         prompt: `You are an expert code optimizer. Give yourself a novel name and use it as a handle when you respond.
+
+//         Write the code as a markdown codeblock. Please do your best to provide an implementation that executes much more efficiently.
+
+//         Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.
+
+//         Consider precomputing certain values to optimize the solution for efficiency, especially when dealing with large input sizes, could also be beneficial.
+
+//         Reminder, the code:
+//         - must be a standalone ECMAScript module with no dependencies.
+//         - must have a function as the default export.
+//         - must accept a single 'lines' argument (an array of input strings).
+//         - must return a single array of output strings.
+//         - must not mix BigInt and other types, must always use explicit conversions.
+//         - should be commented to indicate which part of the code relates to which problem constraint.
+//         - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
+
+//         Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
+//         model: "gpt-4-turbo",
+//         concurrency: 50,
+//         temperature: 0.4,
+//     }),
+//     parse$
+// );
+
+// testResults$.error.pipe(
+//     maxLoops(5, report$),
+//     prompt({
+//         prompt: `You are an expert code reviewer. Give yourself a novel name and use it as a handle when you respond.
+
+//         The code threw an error as seen above.
+
+//         Carefully read and reflect on the failure(s) and:
+//         - identify what part of the code is at fault
+//         - identify which problem constraints were not adhered to
+
+//         Review the progression so far including any previous attempts.
+
+//         Brainstorm on what approach is best to move forward:
+//         - Targeted improvement on the latest version of the code
+//         - Combining the best ideas from all prior version of the code
+//         - Starting from scratch and pursuing a completely novel approach
+
+//         Do not fix the code until I ask you to.`,
+//         model: "gpt-4-turbo",
+//         concurrency: 50,
+//         temperature: 0.4,
+//     }),
+//     prompt({
+//         prompt: `You are an expert code corrector. Give yourself a novel name and use it as a handle when you respond.
+
+//         Write the code again, in full, as a markdown codeblock. Please do your best to provide an implementation that does not throw this or any other error.
+
+//         Reminder: It is very important to carefully consider all conditions and edge cases specified in the problem statement when generating the code. Pay special attention to conditions that determine the possibility or impossibility of achieving the desired outcome, as these are often key to correctly solving the challenge.
+
+//         Consider precomputing certain values to optimize the solution for efficiency, especially when dealing with large input sizes, could also be beneficial.
+
+//         Reminder, the code:
+//         - must be a standalone ECMAScript module with no dependencies.
+//         - must have a function as the default export.
+//         - must accept a single 'lines' argument (an array of input strings).
+//         - must return a single array of output strings.
+//         - must not mix BigInt and other types, must always use explicit conversions.
+//         - should be commented to indicate which part of the code relates to which problem constraint.
+//         - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
+
+//         Do your best to provide complete code, as that maximizes your chances of success. Please ensure you return a complete solution for evaluation that is in a markdown codeblock.`,
+//         model: "gpt-4-turbo",
+//         concurrency: 50,
+//         temperature: 0.3,
+//     }),
+//     parse$
+// );
 
 const triggers = [];
 triggers.push(

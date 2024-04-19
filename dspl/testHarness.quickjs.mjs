@@ -1,64 +1,73 @@
-import {
-    getQuickJS,
-    shouldInterruptAfterDeadline,
-} from "npm:quickjs-emscripten";
+import { Mutex } from "https://esm.sh/async-mutex";
+import { getQuickJS } from "npm:quickjs-emscripten";
 
-export const runTest = async (code, test, timeout = 3000) => {
-    const QuickJS = await getQuickJS();
-    const vm = QuickJS.newContext();
-    vm.runtime.setModuleLoader(() => {
-        return code;
-    });
+const mutex = new Mutex();
 
-    // Create a custom console object
-    const consoleHandle = vm.newObject();
-    const logHandle = vm.newFunction("log", (...args) => {
-        const nativeArgs = args.map(vm.dump);
-        console.log(...nativeArgs);
-    });
-    vm.setProp(consoleHandle, "log", logHandle);
-    vm.setProp(vm.global, "console", consoleHandle);
-    logHandle.dispose();
-    consoleHandle.dispose();
-
-    let result = null;
+export const runTest = async (
+    code,
+    test,
+    timeout = 10000,
+    memoryLimit = 1024 * 1024 * 1024
+) => {
+    const release = await mutex.acquire();
     try {
-        const evalCode = `
-      import impl from "./impl.js";
-      const test = ${JSON.stringify(test)};
-      const { input, output: expected } = test;
-      const inputLines = input.split("\\n");
-      const got = impl(inputLines).join("\\n");
-      const gcmp = got.trim().toLowerCase();
-      const pass = gcmp === expected.trim().toLowerCase();
-      globalThis.result = JSON.stringify({
-        status: pass ? "pass" : "fail",
-        message: pass ? "Test passed" : \`Expected \${expected}, got \${got}\`,
-        input,
-        got,
-        expected,
-      });
-    `;
+        const QuickJS = await getQuickJS();
+        const vm = QuickJS.newContext();
+        vm.runtime.setModuleLoader(() => {
+            return code;
+        });
 
-        // Evaluate the code as an ESM module
-        vm.runtime.setInterruptHandler(
-            shouldInterruptAfterDeadline(Date.now() + timeout)
-        );
-        vm.runtime.setMemoryLimit(1024 * 1024 * 1024);
-        vm.unwrapResult(vm.evalCode(evalCode, "eval.js")).dispose();
-        result = JSON.parse(vm.getString(vm.getProp(vm.global, "result")));
-    } catch (e) {
-        // console.error(e.stack, e.message);
-        result = {
-            status: "error",
-            message: "An error occurred while running the test: " + e,
-            error: e.message,
-            stack: e.stack,
-        };
+        // Create a custom console object
+        const consoleHandle = vm.newObject();
+        const logHandle = vm.newFunction("log", (...args) => {
+            const nativeArgs = args.map(vm.dump);
+            console.log(...nativeArgs);
+        });
+        vm.setProp(consoleHandle, "log", logHandle);
+        vm.setProp(vm.global, "console", consoleHandle);
+        logHandle.dispose();
+        consoleHandle.dispose();
+
+        let result = null;
+        try {
+            const evalCode = `
+          import impl from "./impl.js";
+          const test = ${JSON.stringify(test)};
+          const { input, output: expected } = test;
+          const inputLines = input.split("\\n");
+          const got = impl(inputLines).join("\\n");
+          const gcmp = got.trim().toLowerCase();
+          const pass = gcmp === expected.trim().toLowerCase();
+          globalThis.result = JSON.stringify({
+            status: pass ? "pass" : "fail",
+            message: pass ? "Test passed" : \`Expected \${expected}, got \${got}\`,
+            input,
+            got,
+            expected,
+          });
+        `;
+
+            // Evaluate the code as an ESM module
+            vm.runtime.setInterruptHandler(
+                shouldInterruptAfterDeadline(Date.now() + timeout)
+            );
+            vm.runtime.setMemoryLimit(memoryLimit);
+            vm.unwrapResult(vm.evalCode(evalCode, "eval.js")).dispose();
+            result = JSON.parse(vm.getString(vm.getProp(vm.global, "result")));
+        } catch (e) {
+            result = {
+                status: "error",
+                message: "An error occurred while running the test: " + e,
+                error: e.message,
+                stack: e.stack,
+            };
+        } finally {
+            vm.dispose();
+        }
+        return result;
     } finally {
-        vm.dispose();
+        release();
     }
-    return result;
 };
 
 export const runTests = async (code, tests, options = {}) => {

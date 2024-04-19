@@ -8,6 +8,7 @@ import epub from "https://deno.land/x/epubgen/mod.ts";
 import moe from "https://esm.sh/@toptensoftware/moe-js";
 import pLimit from "https://esm.sh/p-limit";
 import he from "https://esm.sh/he";
+import DSPL from "./schemas.mjs";
 
 // import EpubGenerator from "https://esm.sh/epub-gen";
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
@@ -538,6 +539,7 @@ async function executeDSPL(
         blackboard: {},
     }
 ) {
+    dsplCode = DSPL.parse(dsplCode);
     const dsplObject = dsplCode;
     let steps = [];
 
