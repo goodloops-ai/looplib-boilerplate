@@ -31,7 +31,7 @@ const path = Deno.args[0] || "./guardOutput";
 const nonce = Math.random().toString(36).substring(7);
 Deno.mkdirSync(nonce, { recursive: true });
 const report$ = new Operable(generateReport());
-const challenges$ = new Operable(getChallenges({}));
+const challenges$ = new Operable(getChallenges({ subset: [1] }));
 
 const workflow = new Operable(passThrough);
 
@@ -44,7 +44,7 @@ State the challenge name and index. List the various tries, the result (success,
 
 Then, briefly list the errors you encountered and clasify their types ( e.g. syntax error, runtime error, etc. ) and what you (or should have done) to resolve them. Do not mention challenge-specific details, just general code generation strategy issues. Then provide any changes that should be made to the initial code generation prompts or any of the subsequent prompts. 
 If you encountered no errors, say "No errors encountered."`,
-            model: "gpt-4-0125-preview",
+            model: "gpt-4-turbo",
         })
     )
     .$.subscribe((trigger) => {

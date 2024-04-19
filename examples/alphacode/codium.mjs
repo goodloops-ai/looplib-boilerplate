@@ -4,6 +4,7 @@ import { mergeMap, pipe } from "https://esm.sh/rxjs";
 import { tableFromIPC } from "https://esm.sh/apache-arrow";
 import filenamify from "https://esm.sh/filenamify";
 import { get } from "./std.mjs";
+import { runTest } from "../../dspl/testHarness.quickjs.mjs";
 
 const _challenge = z
     .object({
@@ -91,6 +92,74 @@ export function getChallenges({
             );
     };
 }
+
+export const testSolutionQuickJS = ({
+    timestamp = new Date().toISOString(),
+    nonce = Math.floor(Math.random() * 1000),
+    reformat = false,
+    serial = true,
+    types = ["public_tests", "private_tests", "generated_tests"],
+}) =>
+    async function (trigger) {
+        if (serial) {
+            !!trigger.previous;
+        }
+
+        const valids = await getChallenges({ includePrivate: true })();
+        const __challenge = trigger.findOne(_challenge);
+        const challenge = valids.find((c) => c.index === __challenge.index);
+
+        const code = trigger.payload.result;
+        if (!code || !challenge) {
+            console.log("No code or challenge found!!!!!!!!!!!!!!!");
+            throw new Error("No code or challenge found");
+        }
+
+        const results = {};
+
+        for (const type of types) {
+            if (challenge[type]) {
+                let pass = 0;
+                const failures = [];
+
+                for (const index in challenge[type].input) {
+                    const expected = challenge[type].output[index];
+                    const input = challenge[type].input[index];
+
+                    const test = {
+                        input,
+                        output: expected,
+                    };
+                    const res = await runTest(code, test);
+                    if (res.status === "pass") {
+                        pass++;
+                    } else {
+                        failures.push(res);
+                    }
+                    if (res.status !== "pass" && type !== "public_tests") {
+                        break;
+                    }
+                }
+
+                results[type] = {
+                    pass,
+                    fail: failures.length,
+                    failures,
+                };
+
+                if (failures.length > 0) {
+                    break;
+                }
+            }
+        }
+
+        return {
+            type: "eval_results",
+            name: challenge.name,
+            ...results,
+            tries: trigger.find(this).length + 1,
+        };
+    };
 
 export const testSolution = ({
     timestamp = new Date().toISOString(),
