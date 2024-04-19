@@ -1,8 +1,8 @@
 {
     "lib": ["esnext"],
     "imports": {
-        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@163b1dab5a834b528f11b27b97795f60d30e1dbd/",
-        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@163b1dab5a834b528f11b27b97795f60d30e1dbd",
+        "looplib/": "https://esm.sh/gh/goodloops-ai/looplib@bc4524bb63587481c6ae1987d131367fa795fd3b/",
+        "looplib": "https://esm.sh/gh/goodloops-ai/looplib@bc4524bb63587481c6ae1987d131367fa795fd3b",
         "@local/": "./",
         "dotenv": "https://deno.land/std@0.214.0/dotenv/mod.ts",
         "mustache": "https://esm.sh/mustache",
