@@ -21,3 +21,5 @@ console.log(
         )
         .filter((r) => r.length > 0)
 );
+
+// console.log(challenges);
