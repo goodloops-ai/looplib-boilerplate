@@ -9,6 +9,8 @@ import moe from "https://esm.sh/@toptensoftware/moe-js";
 import pLimit from "https://esm.sh/p-limit";
 import he from "https://esm.sh/he";
 import DSPL from "./schemas.mjs";
+import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
+import { Readability } from "https://esm.sh/@mozilla/readability";
 
 // import EpubGenerator from "https://esm.sh/epub-gen";
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
@@ -229,6 +231,45 @@ const elementModules = {
                 ...config,
             });
             return newMessages.slice(originalHistory);
+        },
+    },
+    readability: {
+        async execute({ url, hide }, context) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(
+                        `Failed to fetch URL: ${url} - Status: ${response.status}`
+                    );
+                }
+                const html = await response.text();
+                const document = new DOMParser().parseFromString(
+                    html,
+                    "text/html"
+                );
+                const article = new Readability(document).parse();
+
+                return [
+                    {
+                        role: "system",
+                        content: article,
+                        meta: {
+                            hidden: hide,
+                        },
+                    },
+                ];
+            } catch (error) {
+                console.error("Error in readability module:", error);
+                return [
+                    {
+                        role: "system",
+                        content: `Failed to extract content from URL: ${url}. Error: ${error.message}`,
+                        meta: {
+                            hidden: true,
+                        },
+                    },
+                ];
+            }
         },
     },
     do: {
