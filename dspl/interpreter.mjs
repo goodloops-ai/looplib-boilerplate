@@ -186,7 +186,12 @@ const llm = async (history, config, file) => {
         } catch (error) {
             console.error("Error in llm function:", error);
             // Deno.exit();
-            return history;
+            return history.concat([
+                {
+                    role: "system",
+                    content: `Error in llm function: ${error.message}`,
+                },
+            ]);
         }
     }
 };
