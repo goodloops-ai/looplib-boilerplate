@@ -36,7 +36,7 @@ async function resolve(obj, seen = new Set()) {
         throw new Error("Circular reference detected");
     }
     seen.add(obj);
-    console.log("Resolving object:", obj);
+    // console.log("Resolving object:", obj);
     if (!obj) return obj;
     if (obj?._mem) return obj._obj;
     // Check if obj is a promise and await it if so
@@ -136,6 +136,12 @@ export function mem(def) {
             return true;
         },
         get(target, key, receiver) {
+            if (key === "_clone")
+                return (newDef) =>
+                    mem({
+                        ...def,
+                        ...newDef,
+                    });
             // console.log("get", key, obj);
             if (key === "_mem") return true;
             if (key === "_obj") return resolve(obj);

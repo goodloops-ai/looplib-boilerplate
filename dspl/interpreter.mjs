@@ -176,7 +176,18 @@ const llm = async (history, config, file) => {
                 return message;
             });
 
-            const newHistory = [...history, ...assistantMessages];
+            const newHistory =
+                assistantMessages.length > 1
+                    ? [
+                          ...history,
+                          {
+                              role: "assistant",
+                              content: assistantMessages.map(
+                                  ({ content }) => content
+                              ),
+                          },
+                      ]
+                    : assistantMessages;
             // console.log("New history:", newHistory);
             console.log(
                 "LATEST:",
@@ -294,11 +305,14 @@ const elementModules = {
                 }
             });
 
-            const executeFlow = async (item) => {
+            const executeFlow = async (item, name = "item") => {
                 console.log("Executing flow for item:", item);
+                const { history, blackboard, ...rest } = context;
                 const childContext = {
                     history: [...context.history],
                     blackboard: context.blackboard,
+                    ...rest,
+                    [name]: item,
                     item,
                 };
 
@@ -345,13 +359,20 @@ const elementModules = {
             if (forConfig) {
                 const { each, in: arrayName } = forConfig;
 
+                const path = arrayName
+                    .split(".")
+                    .map((k) => k.replace("$", "blackboard"));
+                const array = await path.reduce(
+                    (acc, key) => acc.then((o) => o[key]),
+                    Promise.resolve(context)
+                );
+
                 const limit = pLimit(forConfig.concurrency || 1);
-                const array = await context.blackboard[arrayName];
                 const processedArray = await makeList(array, context, config);
                 console.log("Processed array:", processedArray);
                 const promises = processedArray.map((item) =>
                     limit(async () => {
-                        const res = await executeFlow(item);
+                        const res = await executeFlow(item, each);
                         console.log("Processed item:", res);
                         return res;
                     })
@@ -590,16 +611,18 @@ async function executeDSPL(
     let steps = [];
 
     for (const element of dsplObject.elements) {
-        const history = context.history.slice(0);
+        const { blackboard, history, ...rest } = context;
         const newContext = {
-            history,
+            blackboard,
+            history: history.slice(0),
+            ...rest,
         };
-        newContext.blackboard = context.blackboard;
         const elementMessages = await executeStep(element, context);
-        console.log("Element messages:", elementMessages);
+        // console.log("Element messages:", elementMessages);
         context.history.push(...elementMessages);
         steps.push({
             blackboard: await context.blackboard._obj,
+            ...rest,
             step: element,
             trace: elementMessages,
         });
@@ -646,6 +669,7 @@ async function executeStep(
         ];
 
         if (typeof value === "string") {
+            const { blackboard, item, ...rest } = context;
             const template = moe.compile(value, { asyncTemplate: true });
             // console.log(
             //     "Template:",
@@ -655,7 +679,7 @@ async function executeStep(
             //     await blackboard?.description
             // );
             return await he.decode(
-                await template({ $: blackboard, item: item })
+                await template({ $: blackboard, item: item, ...rest })
             );
         } else if (Array.isArray(value)) {
             return Promise.all(
@@ -720,22 +744,13 @@ async function executeStep(
 
     if (parse) {
         for (const [variableName, path] of Object.entries(parse)) {
+            const [bucket, key] = variableName.split(".");
+            const _b = bucket === "$" ? "blackboard" : bucket;
             if (typeof path === "function") {
-                if (context.item) {
-                    context.item[variableName] = await path(
-                        context.response,
-                        context.blackboard
-                    );
-                } else {
-                    context.blackboard[variableName] = await path(
-                        context.response,
-                        context.blackboard
-                    );
-                }
+                context[_b][key] = await path(context.response, context);
+
                 continue;
             }
-            const [bucket, key] = path.split(".");
-            const _b = bucket === "$" ? "blackboard" : bucket;
             const oldValue = await context[_b][key];
             const newValue = context.response[variableName] || oldValue;
             context[_b][key] = newValue;
@@ -881,6 +896,18 @@ async function executeStep(
             );
             messages.push(...newMessages);
         }
+    }
+
+    if (
+        !elementData.onSuccess &&
+        !elementData.onFail &&
+        !elementData.finally &&
+        !elementData.guards &&
+        type == "prompt"
+    ) {
+        console.log("No guards or follow-up elements specified for prompt");
+        console.log(messages);
+        Deno.exit();
     }
 
     return messages.slice(originalHistoryLength);
