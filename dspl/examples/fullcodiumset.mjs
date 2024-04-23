@@ -149,7 +149,7 @@ const fullchallenges = {
                                     );
                                 },
                             },
-                        }).then((c) => c.slice(0, 3)),
+                        }), //.then((c) => c.slice(0, 3)),
                 },
                 challengesJSON: {
                     get: async ({ challenges }) => {

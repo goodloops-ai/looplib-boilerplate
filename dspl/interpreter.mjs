@@ -187,7 +187,7 @@ const llm = async (history, config, file) => {
                               ),
                           },
                       ]
-                    : assistantMessages;
+                    : [...history, ...assistantMessages];
             // console.log("New history:", newHistory);
             console.log(
                 "LATEST:",
@@ -896,18 +896,6 @@ async function executeStep(
             );
             messages.push(...newMessages);
         }
-    }
-
-    if (
-        !elementData.onSuccess &&
-        !elementData.onFail &&
-        !elementData.finally &&
-        !elementData.guards &&
-        type == "prompt"
-    ) {
-        console.log("No guards or follow-up elements specified for prompt");
-        console.log(messages);
-        Deno.exit();
     }
 
     return messages.slice(originalHistoryLength);
