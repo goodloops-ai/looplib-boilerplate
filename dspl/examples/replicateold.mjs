@@ -23,7 +23,7 @@ const fullchallenges = {
                         temperature: 0.3,
                     },
                 },
-                challengeFile: "./dspl/challenges.noTitle.json",
+                challengeFile: "./dspl/challenges.withTitles.json",
                 challenges: {
                     get: ({ challengeFile }) =>
                         importJson(challengeFile, {
