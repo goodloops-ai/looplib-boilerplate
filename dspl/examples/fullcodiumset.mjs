@@ -186,7 +186,7 @@ const fullchallenges = {
             type: "do",
             for: {
                 each: "challenge",
-                in: "challenges",
+                in: "$.challenges",
                 concurrency: 10,
             },
             dspl: {
@@ -197,56 +197,11 @@ const fullchallenges = {
                         content:
                             "You are a top-rated code assistant based on a cutting-edge version of GPT, with far greater capabilities than any prior GPT model. You always return code when requested, and always pay the closest attention to instructions and other elements pointed to by the prompt. You never return partial code, never give up, and never refuse to return code.",
                     },
-                    // {
-                    //     type: "message",
-                    //     role: "user",
-                    //     content: "{{await model.item.yaml}}",
-                    // },
                     {
                         type: "message",
                         role: "user",
-                        content: "{{await model.item.yaml}}",
+                        content: "{{await model.challenge.yaml}}",
                     },
-                    //                     {
-                    //                         type: "message",
-                    //                         role: "user",
-                    //                         content: `Challenge:
-                    // {{await model.item.name}}
-                    // Description:
-                    // {{await model.item.description}}
-                    // Public Tests:
-                    // inputs:
-                    // {{#each i in (await model.item.public_test_original).input}}
-                    // {{i}}
-                    // {{/each}}
-                    // outputs:
-                    // {{#each o in (await model.item.public_test_original).output}}
-                    // {{o}}
-                    // {{/each}}
-                    // `,
-                    //                     },
-                    // {
-                    //     type: "message",
-                    //     role: "user",
-                    //     content: `Challenge:
-                    // {{await model.item.name}}
-                    // Description:
-                    // {{await model.item.description}}
-                    // Public Tests:
-                    // {{#each test in await model.item.public_tests}}
-                    // inputs:
-                    // test {{scope.index}}:
-                    // input:
-                    // {{test.input}}
-                    // output:
-                    // {{test.output}}
-                    // {{/each}}`,
-                    // },
-                    // {
-                    //     type: "message",
-                    //     role: "user",
-                    //     content: `Public Test Data: {{#each test in await model.item.public_tests}}
-                    // },
                     {
                         type: "prompt",
                         content: `Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.
@@ -267,7 +222,7 @@ Try to consider edge cases, especially for problems involving conditional logic 
 Enclose your code in a markdown codeblock.`,
                         parse: {
                             // code: "item.code",
-                            code: (response) =>
+                            "challenge.code": (response) =>
                                 /```(?:javascript|js)?\n([\s\S]*?)\n```/.exec(
                                     response
                                 )?.[1],
@@ -276,12 +231,12 @@ Enclose your code in a markdown codeblock.`,
                         guards: [
                             {
                                 type: "filter",
-                                filter: "item.code",
+                                filter: "challenge.code",
                                 policy: "retry",
                             },
                             {
                                 type: "filter",
-                                filter: "item.public_tests_passed",
+                                filter: "challenge.public_tests_passed",
                                 policy: "retry",
                             },
                         ],
@@ -362,7 +317,7 @@ Public tests:
                             {
                                 type: "prompt",
                                 showHidden: true,
-                                set: "summary",
+                                set: "challenge.summary",
                                 content: `We are now done with this challenge.
 State the challenge name and index. List the various tries, the result (success, partial, fail) of each, and what changed between the versions. Success means all tests passed, partial success means all public tests passed, and fail means all public tests did not pass. For each try, give the numbers of each type of test that was passed.
 

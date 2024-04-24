@@ -16,7 +16,7 @@ const haikuEpubFlow = {
             mode: "json",
             content: "Write a haiku about a beautiful sunset.",
             parse: {
-                haiku: "$.haiku",
+                "$.haiku": (response) => response.haiku,
             },
         },
         {

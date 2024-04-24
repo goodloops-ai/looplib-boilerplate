@@ -71,7 +71,7 @@ const singlechallenge = {
               
                your response object must have the source code in the 'code' property.`,
             parse: {
-                code: "$.code",
+                "$.code": (response) => response.code,
             },
             guards: [
                 {

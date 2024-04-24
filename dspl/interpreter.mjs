@@ -33,6 +33,25 @@ const llm = async (history, config, file) => {
         n = 1,
     } = config;
 
+    if (Array.isArray(n)) {
+        const res = await Promise.all(
+            n.map(async (n) => await llm(history, { ...config, ...n }))
+        );
+        const messages = res.map((r) => r.slice(-1).pop().content);
+        return [
+            ...history,
+            {
+                role: "assistant",
+                content: messages,
+                meta: {
+                    hidden: config.hide,
+                    n: n,
+                    history: META_OMIT_HISTORY ? undefined : history,
+                },
+            },
+        ];
+    }
+
     // console.log(JSON.stringify(history, null, 2));
     // console.log("...running llm function...", JSON.stringify(config, null, 2));
 
@@ -128,12 +147,12 @@ const llm = async (history, config, file) => {
         //     content: JSON_INSTRUCT(),
         // });
 
-        if (showHidden) {
-            console.log("Show hidden messages enabled!");
-            console.log(JSON.stringify(messages, null, 2));
-            console.log(JSON.stringify(history, null, 2));
-            // Deno.exit();
-        }
+        // if (showHidden) {
+        //     console.log("Show hidden messages enabled!");
+        //     console.log(JSON.stringify(messages, null, 2));
+        //     console.log(JSON.stringify(history, null, 2));
+        //     // Deno.exit();
+        // }
         const openai = new OpenAI({
             dangerouslyAllowBrowser: true,
             apiKey: Deno.env.get("OPENAI_API_KEY"),
@@ -148,7 +167,7 @@ const llm = async (history, config, file) => {
                     content: JSON_INSTRUCT(),
                 });
             }
-            console.log("Messages:", messages);
+            // console.log("Messages:", messages);
             const response = await openai.chat.completions.create({
                 model,
                 temperature,
@@ -369,11 +388,11 @@ const elementModules = {
 
                 const limit = pLimit(forConfig.concurrency || 1);
                 const processedArray = await makeList(array, context, config);
-                console.log("Processed array:", processedArray);
+                // console.log("Processed array:", processedArray);
                 const promises = processedArray.map((item) =>
                     limit(async () => {
                         const res = await executeFlow(item, each);
-                        console.log("Processed item:", res);
+                        // console.log("Processed item:", res);
                         return res;
                     })
                 );
@@ -612,11 +631,6 @@ async function executeDSPL(
 
     for (const element of dsplObject.elements) {
         const { blackboard, history, ...rest } = context;
-        const newContext = {
-            blackboard,
-            history: history.slice(0),
-            ...rest,
-        };
         const elementMessages = await executeStep(element, context);
         // console.log("Element messages:", elementMessages);
         context.history.push(...elementMessages);

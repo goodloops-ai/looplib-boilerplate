@@ -187,7 +187,7 @@ const fullchallenges = {
             type: "do",
             for: {
                 each: "challenge",
-                in: "challenges",
+                in: "$.challenges",
                 concurrency: 10,
             },
             dspl: {
@@ -201,27 +201,27 @@ const fullchallenges = {
                     // {
                     //     type: "message",
                     //     role: "user",
-                    //     content: "{{await model.item.yaml}}",
+                    //     content: "{{await model.challenge.yaml}}",
                     // },
                     {
                         type: "message",
                         role: "user",
-                        content: "{{await model.item.yaml}}",
+                        content: "{{await model.challenge.yaml}}",
                     },
                     //                     {
                     //                         type: "message",
                     //                         role: "user",
                     //                         content: `Challenge:
-                    // {{await model.item.name}}
+                    // {{await model.challenge.name}}
                     // Description:
-                    // {{await model.item.description}}
+                    // {{await model.challenge.description}}
                     // Public Tests:
                     // inputs:
-                    // {{#each i in (await model.item.public_test_original).input}}
+                    // {{#each i in (await model.challenge.public_test_original).input}}
                     // {{i}}
                     // {{/each}}
                     // outputs:
-                    // {{#each o in (await model.item.public_test_original).output}}
+                    // {{#each o in (await model.challenge.public_test_original).output}}
                     // {{o}}
                     // {{/each}}
                     // `,
@@ -230,11 +230,11 @@ const fullchallenges = {
                     //     type: "message",
                     //     role: "user",
                     //     content: `Challenge:
-                    // {{await model.item.name}}
+                    // {{await model.challenge.name}}
                     // Description:
-                    // {{await model.item.description}}
+                    // {{await model.challenge.description}}
                     // Public Tests:
-                    // {{#each test in await model.item.public_tests}}
+                    // {{#each test in await model.challenge.public_tests}}
                     // inputs:
                     // test {{scope.index}}:
                     // input:
@@ -246,7 +246,7 @@ const fullchallenges = {
                     // {
                     //     type: "message",
                     //     role: "user",
-                    //     content: `Public Test Data: {{#each test in await model.item.public_tests}}
+                    //     content: `Public Test Data: {{#each test in await model.challenge.public_tests}}
                     // },
                     {
                         type: "prompt",
@@ -268,8 +268,8 @@ const fullchallenges = {
         
         Enclose your code in a markdown codeblock.`,
                         parse: {
-                            // code: "item.code",
-                            code: (response) =>
+                            // code: "challenge.code",
+                            "challenge.code": (response) =>
                                 /```(?:javascript|js)?\n([\s\S]*?)\n```/.exec(
                                     response
                                 )?.[1],
@@ -278,12 +278,12 @@ const fullchallenges = {
                         guards: [
                             {
                                 type: "filter",
-                                filter: "item.code",
+                                filter: "challenge.code",
                                 policy: "retry",
                             },
                             {
                                 type: "filter",
-                                filter: "item.public_tests_passed",
+                                filter: "challenge.public_tests_passed",
                                 policy: "retry",
                             },
                         ],
@@ -293,10 +293,10 @@ const fullchallenges = {
                                 role: "user",
                                 content: `
 Total test results:
-{{(await model.item.tests_passed) ? "Success" : "Fail"}}
+{{(await model.challenge.tests_passed) ? "Success" : "Fail"}}
 
 Public tests:
-{{#each res in await model.item.public_test_results}}
+{{#each res in await model.challenge.public_test_results}}
     - Test Result: {{scope.index}} -
     {{#if await res.status == "pass"}}
     Success: {{await res.message}}. Congratulations, no errors detected!
@@ -314,7 +314,7 @@ Public tests:
 {{/each}}
 
 Private Tests:
-{{#each res in await model.item.private_test_results}}
+{{#each res in await model.challenge.private_test_results}}
     - Test Result: {{scope.index}} -
     {{#if await res.status == "pass"}}
     Success: {{await res.message}}. Congratulations, no errors detected!
@@ -339,10 +339,10 @@ Private Tests:
                                 type: "message",
                                 role: "user",
                                 content: `Total test results:
-{{(await model.item.tests_passed) ? "Success" : "Fail"}}
+{{(await model.challenge.tests_passed) ? "Success" : "Fail"}}
 
 Public tests:
-{{#each res in await model.item.public_test_results}}
+{{#each res in await model.challenge.public_test_results}}
     - Test Result: {{scope.index}} -
     {{#if await res.status == "pass"}}
     Success: {{await res.message}}. Congratulations, no errors detected!

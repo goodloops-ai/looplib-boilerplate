@@ -17,14 +17,14 @@ const poemdspl = {
             content:
                 "give me an array of animals, one for each letter of the alphabet, each starting with the letter of the alphabet it corresponds to. put it in the 'animals' key in your response, with each object having a 'letter' and 'animal' property",
             parse: {
-                animals: "$.animals",
+                "$.animals": (response) => response.animals,
             },
         },
         {
             type: "do",
             for: {
                 each: "animal",
-                in: "animals",
+                in: "$.animals",
                 concurrency: 10,
             },
             dspl: {
@@ -32,7 +32,7 @@ const poemdspl = {
                     {
                         type: "prompt",
                         content:
-                            "write me a short children's book poem about {{await model.item.animal}}",
+                            "write me a short children's book poem about {{await model.animal.animal}}",
                         set: "poem",
                     },
                 ],
