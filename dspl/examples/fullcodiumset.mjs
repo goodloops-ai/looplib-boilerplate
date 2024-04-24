@@ -52,6 +52,7 @@ const fullchallenges = {
                                     // );
                                     // Deno.exit(1);
                                     return YAML.stringify({
+                                        type: "challenge",
                                         index,
                                         name,
                                         description,
