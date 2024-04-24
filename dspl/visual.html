@@ -1,0 +1,315 @@
+here's the little visualizer btw: <!DOCTYPE html>
+<html>
+    <head>
+        <title>JSON Visualizer</title>
+        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+        <link
+            rel="stylesheet"
+            href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism.min.css" />
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-json.min.js"></script>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 20px;
+            }
+
+            .json-tree {
+                margin-left: 20px;
+            }
+
+            .json-key {
+                font-weight: bold;
+            }
+
+            .json-value {
+                margin-left: 10px;
+            }
+
+            .json-collapse {
+                cursor: pointer;
+                display: inline-block;
+                user-select: none;
+            }
+
+            .json-collapse::before {
+                content: "";
+                display: inline-block;
+                width: 0;
+                height: 0;
+                margin-right: 5px;
+                border-top: 5px solid transparent;
+                border-bottom: 5px solid transparent;
+                border-left: 5px solid #000;
+                transition: transform 0.2s;
+            }
+
+            .json-collapse.expanded::before {
+                transform: rotate(90deg);
+            }
+
+            .json-collapse-text {
+                display: inline-block;
+            }
+
+            .markdown-content {
+                margin-left: 10px;
+            }
+
+            .error-message {
+                color: red;
+            }
+
+            pre[class*="language-"] {
+                margin: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>JSON Visualizer</h1>
+
+        <input type="file" id="fileInput" accept=".json" />
+
+        <button onclick="visualizeJSON()">Visualize</button>
+
+        <div id="jsonOutput"></div>
+
+        <script>
+            let parsedJSON;
+
+            function visualizeJSON() {
+                const fileInput = document.getElementById("fileInput");
+                const file = fileInput.files[0];
+
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function (event) {
+                        const jsonData = event.target.result;
+                        const jsonOutput =
+                            document.getElementById("jsonOutput");
+
+                        try {
+                            parsedJSON = JSON.parse(jsonData);
+                            jsonOutput.innerHTML = "";
+                            jsonOutput.appendChild(
+                                generateJSONTree(parsedJSON)
+                            );
+                            Prism.highlightAll();
+                        } catch (error) {
+                            jsonOutput.innerHTML =
+                                '<div class="error-message">Invalid JSON data: ' +
+                                error.message +
+                                "</div>";
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            }
+
+            function generateJSONTree(data, level = 0, maxDepth = 2) {
+                let fragment = document.createDocumentFragment();
+
+                if (Array.isArray(data)) {
+                    for (let i = 0; i < data.length; i++) {
+                        const value = data[i];
+                        const div = document.createElement("div");
+                        div.style.marginLeft = level * 20 + "px";
+
+                        if (
+                            typeof value === "object" &&
+                            value !== null &&
+                            level < maxDepth
+                        ) {
+                            const span = createCollapsibleElement(i, true);
+                            div.appendChild(span);
+
+                            const treeDiv = document.createElement("div");
+                            treeDiv.className = "json-tree";
+                            treeDiv.style.display = "none";
+                            div.appendChild(treeDiv);
+
+                            treeDiv.appendChild(
+                                generateJSONTree(value, level + 1, maxDepth)
+                            );
+                        } else if (
+                            typeof value === "object" &&
+                            value !== null &&
+                            level >= maxDepth
+                        ) {
+                            const span = createCollapsibleElement(i, true);
+                            div.appendChild(span);
+
+                            const treeDiv = document.createElement("div");
+                            treeDiv.className = "json-tree";
+                            treeDiv.style.display = "none";
+                            const placeholder = document.createElement("span");
+                            placeholder.className = "json-placeholder";
+                            placeholder.textContent = "Loading...";
+                            treeDiv.appendChild(placeholder);
+                            div.appendChild(treeDiv);
+                        } else {
+                            div.appendChild(renderValue(value));
+                        }
+
+                        fragment.appendChild(div);
+                    }
+                } else {
+                    for (let key in data) {
+                        if (data.hasOwnProperty(key)) {
+                            const value = data[key];
+                            const div = document.createElement("div");
+                            div.style.marginLeft = level * 20 + "px";
+
+                            if (
+                                typeof value === "object" &&
+                                value !== null &&
+                                level < maxDepth
+                            ) {
+                                const span = createCollapsibleElement(
+                                    key,
+                                    false
+                                );
+                                div.appendChild(span);
+
+                                const treeDiv = document.createElement("div");
+                                treeDiv.className = "json-tree";
+                                treeDiv.style.display = "none";
+                                div.appendChild(treeDiv);
+
+                                treeDiv.appendChild(
+                                    generateJSONTree(value, level + 1, maxDepth)
+                                );
+                            } else if (
+                                typeof value === "object" &&
+                                value !== null &&
+                                level >= maxDepth
+                            ) {
+                                const span = createCollapsibleElement(
+                                    key,
+                                    false
+                                );
+                                div.appendChild(span);
+
+                                const treeDiv = document.createElement("div");
+                                treeDiv.className = "json-tree";
+                                treeDiv.style.display = "none";
+                                const placeholder =
+                                    document.createElement("span");
+                                placeholder.className = "json-placeholder";
+                                placeholder.textContent = "Loading...";
+                                treeDiv.appendChild(placeholder);
+                                div.appendChild(treeDiv);
+                            } else {
+                                const keySpan = document.createElement("span");
+                                keySpan.className = "json-key";
+                                keySpan.textContent = key;
+                                div.appendChild(keySpan);
+                                div.appendChild(renderValue(value, level));
+                            }
+
+                            fragment.appendChild(div);
+                        }
+                    }
+                }
+
+                return fragment;
+            }
+
+            function renderValue(value, level) {
+                if (typeof value === "string" && isJsonString(value)) {
+                    const parsedValue = JSON.parse(value);
+                    return generateJSONTree(parsedValue, level + 1);
+                } else if (typeof value === "string") {
+                    const div = document.createElement("div");
+                    div.className = "markdown-content";
+                    div.innerHTML = marked.parse(value);
+                    return div;
+                } else {
+                    const pre = document.createElement("pre");
+                    const code = document.createElement("code");
+                    code.className = "language-json";
+                    code.textContent = JSON.stringify(value, null, 2);
+                    pre.appendChild(code);
+                    return pre;
+                }
+            }
+
+            function createCollapsibleElement(key, isArray) {
+                const span = document.createElement("span");
+                span.className = "json-collapse";
+                span.onclick = function () {
+                    toggleCollapse(this);
+                };
+                span.setAttribute("aria-expanded", "false");
+
+                const arrowSpan = document.createElement("span");
+                arrowSpan.className = "json-collapse-arrow";
+                span.appendChild(arrowSpan);
+
+                const textSpan = document.createElement("span");
+                textSpan.className = "json-collapse-text";
+                textSpan.textContent = isArray ? "[" + key + "]" : key;
+                span.appendChild(textSpan);
+
+                return span;
+            }
+
+            function toggleCollapse(element) {
+                const tree = element.nextElementSibling;
+                const isCollapsed =
+                    element.getAttribute("aria-expanded") === "false";
+
+                tree.style.display = isCollapsed ? "block" : "none";
+                element.setAttribute("aria-expanded", isCollapsed);
+                element.classList.toggle("expanded", isCollapsed);
+
+                if (isCollapsed && tree.querySelector(".json-placeholder")) {
+                    const key = element.lastElementChild.textContent.trim();
+
+                    try {
+                        const value = getValueFromJSON(key);
+                        tree.innerHTML = "";
+                        tree.appendChild(generateJSONTree(value, 0));
+                        Prism.highlightAll();
+                    } catch (error) {
+                        tree.innerHTML =
+                            '<span class="error-message">Error: ' +
+                            error.message +
+                            "</span>";
+                    }
+                }
+            }
+
+            function getValueFromJSON(key) {
+                if (Array.isArray(parsedJSON)) {
+                    const index = parseInt(key.match(/\d+/)[0]);
+                    if (index >= 0 && index < parsedJSON.length) {
+                        return parsedJSON[index];
+                    } else {
+                        throw new Error("Index out of bounds: " + key);
+                    }
+                } else if (
+                    typeof parsedJSON === "object" &&
+                    parsedJSON !== null
+                ) {
+                    if (parsedJSON.hasOwnProperty(key)) {
+                        return parsedJSON[key];
+                    } else {
+                        throw new Error("Key not found: " + key);
+                    }
+                } else {
+                    throw new Error("Invalid JSON structure");
+                }
+            }
+
+            function isJsonString(str) {
+                try {
+                    JSON.parse(str);
+                } catch (e) {
+                    return false;
+                }
+                return true;
+            }
+        </script>
+    </body>
+</html>
