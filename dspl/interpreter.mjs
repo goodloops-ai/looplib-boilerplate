@@ -23,7 +23,10 @@ const JSON_INSTRUCT = (md) =>
 
 const llm = async (history, config, file) => {
     const META_OMIT_HISTORY = Deno.env.get("META_OMIT_HISTORY") === "true";
-    const {
+    const USE_OPENROUTER = Deno.env.get("USE_OPENROUTER") === "true";
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
+
+    let {
         apiKey,
         model: _model,
         temperature,
@@ -32,6 +35,11 @@ const llm = async (history, config, file) => {
         showHidden,
         n = 1,
     } = config;
+
+    _model =
+        _model.startsWith("gpt") && USE_OPENROUTER
+            ? "openai/" + _model
+            : _model;
 
     if (Array.isArray(n)) {
         const res = await Promise.all(
@@ -155,7 +163,12 @@ const llm = async (history, config, file) => {
         // }
         const openai = new OpenAI({
             dangerouslyAllowBrowser: true,
-            apiKey: Deno.env.get("OPENAI_API_KEY"),
+            baseURL: USE_OPENROUTER
+                ? "https://openrouter.ai/api/v1"
+                : undefined,
+            apiKey: USE_OPENROUTER
+                ? OPENROUTER_API_KEY
+                : Deno.env.get("OPENAI_API_KEY"),
         });
 
         try {
