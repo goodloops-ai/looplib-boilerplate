@@ -228,7 +228,7 @@ Enclose your code in a markdown codeblock.`,
                                     response
                                 )?.[1],
                         },
-                        retries: 1,
+                        retries: 0,
                         guards: [
                             {
                                 type: "filter",
