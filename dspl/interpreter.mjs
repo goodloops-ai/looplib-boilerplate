@@ -83,125 +83,55 @@ const llm = async (history, config, file) => {
     // console.log("...running llm function...", JSON.stringify(config, null, 2));
 
     const model = response_format ? "gpt-4-0125-preview" : _model;
-    if (model.startsWith("claude")) {
-        let systemMessage = "";
-        const mergedMessages = [];
-        let lastRole = null;
 
-        history
-            .filter((item) => !Array.isArray(item))
-            .filter((item) => showHidden || item.meta?.hidden !== true)
-            .forEach(({ role, content }) => {
-                if (role === "system") {
-                    systemMessage += content + "\n";
-                } else {
-                    content = !(typeof content === "string")
-                        ? JSON.stringify(content, null, 2)
-                        : content;
+    let messages = history
+        .filter((item) => !Array.isArray(item))
+        .filter((item) => item.content)
+        .filter((item) => showHidden || item.meta?.hidden !== true)
+        .map(({ role, content }) => ({ role, content }))
+        .map(({ role, content }) => {
+            content = !(typeof content === "string")
+                ? JSON.stringify(content, null, 2)
+                : content;
 
-                    if (role === lastRole && mergedMessages.length > 0) {
-                        mergedMessages[mergedMessages.length - 1].content +=
-                            "\n" + content;
-                    } else {
-                        mergedMessages.push({ role, content });
-                        lastRole = role;
-                    }
-                }
-            });
+            role = role || "system";
 
-        const userMessages = mergedMessages.map(({ role, content }) => ({
-            role,
-            content,
-        }));
-        const anthropic = new Anthropic({
-            apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
+            return { role, content };
         });
+    // .concat({
+    //     role: "system",
+    //     content: JSON_INSTRUCT(),
+    // });
 
-        try {
-            // console.log("Messages:", userMessages);
-            const response = await anthropic.messages.create({
-                model,
-                temperature,
-                max_tokens,
-                messages: userMessages,
-                system: `${systemMessage.trim()}\n${JSON_INSTRUCT(true)}`,
+    // if (showHidden) {
+    //     console.log("Show hidden messages enabled!");
+    //     console.log(JSON.stringify(messages, null, 2));
+    //     console.log(JSON.stringify(history, null, 2));
+    //     // Deno.exit();
+    // }
+    const openai = new OpenAI({
+        dangerouslyAllowBrowser: true,
+        baseURL: USE_OPENROUTER ? "https://openrouter.ai/api/v1" : undefined,
+        apiKey: USE_OPENROUTER
+            ? OPENROUTER_API_KEY
+            : Deno.env.get("OPENAI_API_KEY"),
+    });
+
+    try {
+        let rf = response_format;
+        if (config.mode === "json") {
+            rf = { type: "json_object" };
+            messages = messages.concat({
+                role: "system",
+                content: JSON_INSTRUCT(),
             });
-
-            const responseText = response.content[0].text;
-            // parse markdown codeblock
-            const codeblock = responseText.match(/```json\n([\s\S]*?)\n```/);
-            // console.log("Response:", responseText, codeblock?.[1]);
-            const codeblockWithNoNewLines = codeblock?.[1];
-            // Deno.exit();
-            const assistantMessages = [
-                {
-                    role: "assistant",
-                    content: codeblockWithNoNewLines
-                        ? new Function(`return ${codeblockWithNoNewLines}`)()
-                        : new Function(`return ${responseText}`)(),
-                },
-            ];
-
-            const newHistory = [...history, ...assistantMessages];
-            console.log(
-                "LATEST:",
-                JSON.stringify(newHistory.slice(-2), null, 2)
-            );
-            // Deno.exit();
-            return newHistory;
-        } catch (error) {
-            console.error("Error in llm function:", error);
-            Deno.exit();
-            return history;
         }
-    } else {
-        let messages = history
-            .filter((item) => !Array.isArray(item))
-            .filter((item) => item.content)
-            .filter((item) => showHidden || item.meta?.hidden !== true)
-            .map(({ role, content }) => ({ role, content }))
-            .map(({ role, content }) => {
-                content = !(typeof content === "string")
-                    ? JSON.stringify(content, null, 2)
-                    : content;
-
-                role = role || "system";
-
-                return { role, content };
-            });
-        // .concat({
-        //     role: "system",
-        //     content: JSON_INSTRUCT(),
-        // });
-
-        // if (showHidden) {
-        //     console.log("Show hidden messages enabled!");
-        //     console.log(JSON.stringify(messages, null, 2));
-        //     console.log(JSON.stringify(history, null, 2));
-        //     // Deno.exit();
-        // }
-        const openai = new OpenAI({
-            dangerouslyAllowBrowser: true,
-            baseURL: USE_OPENROUTER
-                ? "https://openrouter.ai/api/v1"
-                : undefined,
-            apiKey: USE_OPENROUTER
-                ? OPENROUTER_API_KEY
-                : Deno.env.get("OPENAI_API_KEY"),
-        });
-
-        try {
-            let rf = response_format;
-            if (config.mode === "json") {
-                rf = { type: "json_object" };
-                messages = messages.concat({
-                    role: "system",
-                    content: JSON_INSTRUCT(),
-                });
-            }
-            // console.log("Messages:", messages);
-            console.log("N:", n);
-            const response = await openai.chat.completions.create({
+        // console.log("Messages:", messages);
+        console.log("N:", n);
+        let response, tries;
+        do {
+            await new Promise((r) => setTimeout(r, 1000 * tries ** 2));
+            response = await openai.chat.completions.create({
                 model,
                 temperature,
                 max_tokens,
@@ -209,64 +139,61 @@ const llm = async (history, config, file) => {
                 messages,
                 n,
             });
+        } while (!response.choices && tries++ <= (config.api_tries || 4));
 
-            if (!response.choices) {
-                console.error("No choices in response:", response);
-                Deno.exit();
-                return history.concat([
-                    {
-                        role: "system",
-                        content: `Error in llm function: ${response}`,
-                    },
-                ]);
-            }
-
-            const assistantMessages = response.choices.map(({ message }) => {
-                // message.content = JSON.parse(message.content);
-
-                if (!META_OMIT_HISTORY) {
-                    message.meta = {
-                        history: messages
-                            .slice(0)
-                            .map(({ content, role }) => ({ content, role })),
-                    };
-                }
-
-                if (config.mode === "json") {
-                    message.content = JSON.parse(message.content);
-                }
-
-                return message;
-            });
-
-            const newHistory =
-                assistantMessages.length > 1
-                    ? [
-                          ...history,
-                          {
-                              role: "assistant",
-                              content: assistantMessages.map(
-                                  ({ content }) => content
-                              ),
-                          },
-                      ]
-                    : [...history, ...assistantMessages];
-            // console.log("New history:", newHistory);
-            console.log(
-                "LATEST:",
-                JSON.stringify(newHistory.slice(-2), null, 2)
-            );
-            return newHistory;
-        } catch (error) {
-            console.error("Error in llm function:", error);
-            // Deno.exit();
+        if (!response.choices) {
+            console.error("No choices in response after 4 tries:", response);
+            Deno.exit();
             return history.concat([
                 {
                     role: "system",
-                    content: `Error in llm function: ${error.message}`,
+                    content: `Error in llm function after 4 tries: ${response}`,
                 },
             ]);
         }
+
+        const assistantMessages = response.choices.map(({ message }) => {
+            // message.content = JSON.parse(message.content);
+
+            if (!META_OMIT_HISTORY) {
+                message.meta = {
+                    history: messages
+                        .slice(0)
+                        .map(({ content, role }) => ({ content, role })),
+                };
+            }
+
+            if (config.mode === "json") {
+                message.content = JSON.parse(message.content);
+            }
+
+            return message;
+        });
+
+        const newHistory =
+            assistantMessages.length > 1
+                ? [
+                      ...history,
+                      {
+                          role: "assistant",
+                          content: assistantMessages.map(
+                              ({ content }) => content
+                          ),
+                      },
+                  ]
+                : [...history, ...assistantMessages];
+        // console.log("New history:", newHistory);
+        console.log("LATEST:", JSON.stringify(newHistory.slice(-2), null, 2));
+        return newHistory;
+    } catch (error) {
+        console.error("Error in llm function:", error);
+        // Deno.exit();
+        return history.concat([
+            {
+                role: "system",
+                content: `Error in llm function: ${error.message}`,
+            },
+        ]);
     }
 };
 
