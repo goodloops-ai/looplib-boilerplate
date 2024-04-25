@@ -201,7 +201,6 @@ const llm = async (history, config, file) => {
             }
             // console.log("Messages:", messages);
             console.log("N:", n);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
             const response = await openai.chat.completions.create({
                 model,
                 temperature,
@@ -210,9 +209,16 @@ const llm = async (history, config, file) => {
                 messages,
                 n,
             });
-            console.log("RESPONSE:", response.choices.length);
-            if (n > 1) {
+
+            if (!response.choices) {
+                console.error("No choices in response:", response);
                 Deno.exit();
+                return history.concat([
+                    {
+                        role: "system",
+                        content: `Error in llm function: ${response}`,
+                    },
+                ]);
             }
 
             const assistantMessages = response.choices.map(({ message }) => {
