@@ -104,6 +104,12 @@ const PromptStep = BaseStep.extend({
         .describe(
             "The number of responses to generate from the LLM for the prompt."
         ),
+    api_tries: z
+        .number()
+        .default(4)
+        .describe(
+            "The number of API retries in case of error. exponential backoff."
+        ),
 });
 
 const DoStep = BaseStep.extend({
