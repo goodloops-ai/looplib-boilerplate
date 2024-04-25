@@ -128,7 +128,8 @@ const llm = async (history, config, file) => {
         }
         // console.log("Messages:", messages);
         console.log("N:", n);
-        let response, tries;
+        let response,
+            tries = 0;
         do {
             console.log(`try ${tries + 1} of ${config.api_tries || 4}`);
             try {
