@@ -130,16 +130,21 @@ const llm = async (history, config, file) => {
         console.log("N:", n);
         let response, tries;
         do {
-            await new Promise((r) => setTimeout(r, 1000 * tries ** 2));
-            response = await openai.chat.completions.create({
-                model,
-                temperature,
-                max_tokens,
-                response_format: rf,
-                messages,
-                n,
-            });
-        } while (!response.choices && tries++ <= (config.api_tries || 4));
+            try {
+                await new Promise((r) => setTimeout(r, 1000 * tries ** 2));
+                response = await openai.chat.completions.create({
+                    model,
+                    temperature,
+                    max_tokens,
+                    response_format: rf,
+                    messages,
+                    n,
+                });
+            } catch (error) {
+                console.error("Error in llm function:", error);
+                response = {};
+            }
+        } while (!response?.choices && tries++ <= (config.api_tries || 4));
 
         if (!response.choices) {
             console.error("No choices in response after 4 tries:", response);
