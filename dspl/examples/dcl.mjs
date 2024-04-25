@@ -231,15 +231,16 @@ const fullchallenges = {
                         Enclose your code in a markdown codeblock.`,
                         parse: {
                             // code: "item.code",
-                            "$.solutions": (responses, { challenge }) =>
-                                responses
+                            "$.solutions": (responses, { challenge }) => {
+                                return responses
                                     .map(
                                         (response) =>
                                             /```(?:javascript|js)?\n([\s\S]*?)\n```/.exec(
                                                 response
                                             )?.[1]
                                     )
-                                    .map((code) => challenge._clone({ code })),
+                                    .map((code) => challenge._clone({ code }));
+                            },
                         },
                     },
                     {

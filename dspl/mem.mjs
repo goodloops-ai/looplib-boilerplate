@@ -61,7 +61,7 @@ export function mem(def) {
         .filter(
             ([key, value]) =>
                 (!key.startsWith("[") && typeof value === "function") ||
-                typeof value.get === "function"
+                typeof value?.get === "function"
         )
         .reduce((acc, [key, value]) => {
             const base = value.get || value;

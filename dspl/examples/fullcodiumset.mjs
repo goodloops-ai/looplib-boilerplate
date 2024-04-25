@@ -215,6 +215,7 @@ The code:
 - must not mix BigInt and other types, must always use explicit conversions.
 - should be commented to indicate which part of the code relates to which problem constraint.
 - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
+- should be divided into small sub-functions of at most 10 lines, with meaningful names and functionality. Variables names should also be meaningful.
 
 IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 5,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
 

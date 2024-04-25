@@ -58,6 +58,25 @@ const llm = async (history, config, file) => {
                 },
             },
         ];
+    } else if (n > 1 && USE_OPENROUTER) {
+        const res = await Promise.all(
+            Array(n)
+                .fill(0)
+                .map(async () => await llm(history, { ...config, n: 1 }))
+        );
+        const messages = res.map((r) => r.slice(-1).pop().content);
+        return [
+            ...history,
+            {
+                role: "assistant",
+                content: messages,
+                meta: {
+                    hidden: config.hide,
+                    n: n,
+                    history: META_OMIT_HISTORY ? undefined : history,
+                },
+            },
+        ];
     }
 
     // console.log(JSON.stringify(history, null, 2));
@@ -181,6 +200,8 @@ const llm = async (history, config, file) => {
                 });
             }
             // console.log("Messages:", messages);
+            console.log("N:", n);
+            await new Promise((resolve) => setTimeout(resolve, 1000));
             const response = await openai.chat.completions.create({
                 model,
                 temperature,
@@ -189,6 +210,10 @@ const llm = async (history, config, file) => {
                 messages,
                 n,
             });
+            console.log("RESPONSE:", response.choices.length);
+            if (n > 1) {
+                Deno.exit();
+            }
 
             const assistantMessages = response.choices.map(({ message }) => {
                 // message.content = JSON.parse(message.content);
