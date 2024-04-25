@@ -130,6 +130,7 @@ const llm = async (history, config, file) => {
         console.log("N:", n);
         let response, tries;
         do {
+            console.log(`try ${tries + 1} of ${config.api_tries || 4}`);
             try {
                 await new Promise((r) => setTimeout(r, 1000 * tries ** 2));
                 response = await openai.chat.completions.create({
@@ -152,7 +153,11 @@ const llm = async (history, config, file) => {
             return history.concat([
                 {
                     role: "system",
-                    content: `Error in llm function after 4 tries: ${response}`,
+                    content: `Error in llm function after 4 tries: ${JSON.stringify(
+                        response,
+                        null,
+                        2
+                    )}`,
                 },
             ]);
         }
