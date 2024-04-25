@@ -148,7 +148,10 @@ const llm = async (history, config, file) => {
         } while (!response?.choices && tries++ <= (config.api_tries || 4));
 
         if (!response.choices) {
-            console.error("No choices in response after 4 tries:", response);
+            console.error(
+                "No choices in response after 4 tries:",
+                JSON.stringify(response, null, 2)
+            );
             Deno.exit();
             return history.concat([
                 {
