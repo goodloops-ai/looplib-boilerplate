@@ -54,24 +54,29 @@ const singlechallenge = {
         },
         {
             type: "prompt",
-            retries: 0,
             content: `Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.
-               The code:
-               - must be a standalone ECMAScript module with no dependencies.
-               - must have a function as the default export.
-               - must accept a single 'lines' argument (an array of input strings).
-               - must return a single array of output strings.
-               - must not mix BigInt and other types, must always use explicit conversions.
-               - should be commented to indicate which part of the code relates to which problem constraint.
-               - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
-              
-               IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 10,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general, avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
-              
-               Consider edge cases, especially for problems involving conditional logic or specific constraints. Your code will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.
-              
-               your response object must have the source code in the 'code' property.`,
+
+The code:
+- must be a standalone ECMAScript module with no dependencies.
+- must have a function as the default export.
+- must accept a single 'lines' argument (an array of input strings).
+- must return a single array of output strings.
+- must not mix BigInt and other types, must always use explicit conversions.
+- should be commented to indicate which part of the code relates to which problem constraint.
+- should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
+- should be divided into small sub-functions of at most 10 lines, with meaningful names and functionality. Variables names should also be meaningful.
+
+IMPORTANT: The new Array constructor has been modified to disallow arrays of length > 5,000. Avoid scaling array size with input because some of the tests you cannot see may have significantly larger input than the one(s) you can see. In general avoid making unwarranted assumptions about input on the basis of the test(s) you can see.
+
+Try to consider edge cases, especially for problems involving conditional logic or specific constraints. Your code, will eventually be tested against tests you will not have seen, so please consider the whole spectrum of possible valid inputs. You will have 6 attempts to get the code right, and this is the first.
+
+Enclose your code in a markdown codeblock.`,
             parse: {
-                "$.code": (response) => response.code,
+                // code: "item.code",
+                "$.code": (response) =>
+                    /```(?:javascript|js)?\n([\s\S]*?)\n```/.exec(
+                        response
+                    )?.[1],
             },
             guards: [
                 {

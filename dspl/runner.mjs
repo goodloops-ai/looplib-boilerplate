@@ -7,12 +7,15 @@ const code = await import(codefile);
 const start = performance.now();
 
 for (let i = 0; i < runs; i++) {
+    const thisstart = performance.now();
     const { steps, context } = await executeDSPL(code.default);
+    const thistime = Math.round((performance.now() - thisstart) / 60000);
     if (Deno.args[1]) {
         await Deno.writeTextFile(
             runs === 1 ? outputfile : `${outputfile}.${i + 1}.of.${runs}`,
             JSON.stringify(
                 {
+                    time: thistime,
                     code: await Deno.readTextFile(Deno.args[0]),
                     context: {
                         blackboard: await context.blackboard._obj,
@@ -26,5 +29,8 @@ for (let i = 0; i < runs; i++) {
     }
 }
 
-console.log("Execution time:", performance.now() - start);
+console.log(
+    "Execution time:",
+    Math.round((performance.now() - start) / 60000) + "mins"
+);
 Deno.exit();
