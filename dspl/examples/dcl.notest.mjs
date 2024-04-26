@@ -228,45 +228,6 @@ The code:
 - should match the output format and precision exactly as specified in the problem statement. The output checking is case sensitive, so make sure to get the case of any words right.
 
 Enclose your code in a markdown codeblock.`,
-                        parse: {
-                            // code: "item.code",
-                            "$.solutions": (responses, { challenge }) => {
-                                return responses
-                                    .map(
-                                        (response) =>
-                                            /```(?:javascript|js)?\n([\s\S]*?)\n```/.exec(
-                                                response
-                                            )?.[1]
-                                    )
-                                    .map((code) => challenge._clone({ code }));
-                            },
-                        },
-                    },
-                    {
-                        type: "message",
-                        role: "user",
-                        content: `{{#each solution in await model.$.solutions}}
-Solution:
-{{await solution.code}}
-
-Public tests:
-{{#each res in await solution.public_test_results}}
-    - Test Result: {{scope.index}} -
-    {{#if await res.status == "pass"}}
-    Success: {{await res.message}}. Congratulations, no errors detected!
-    {{#elseif await res.error == "SyntaxError"}}
-    Syntax Error Detected: {{await res.message}}. Please check your syntax.
-    {{#elseif await res.error == "Timeout"}}
-    Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
-    {{#elseif await res.error == "RuntimeError"}}
-    Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
-    {{#elseif await res.error == "TypeError"}}
-    Type Error: {{await res.message}}. Verify that your data types are correct.
-    {{#else}}
-    Unknown Error: {{await res.message}}. Review the code for potential issues.
-    {{/if}}
-{{/each}}
-{{/each}}`,
                     },
                     {
                         type: "prompt",

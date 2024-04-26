@@ -4,6 +4,7 @@ const outputfile = Deno.args[1];
 const runs = Deno.args[2] || 1;
 
 const code = await import(codefile);
+const start = performance.now();
 
 for (let i = 0; i < runs; i++) {
     const { steps, context } = await executeDSPL(code.default);
@@ -24,4 +25,6 @@ for (let i = 0; i < runs; i++) {
         );
     }
 }
+
+console.log("Execution time:", performance.now() - start);
 Deno.exit();

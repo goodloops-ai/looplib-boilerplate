@@ -54,7 +54,7 @@ const singlechallenge = {
         },
         {
             type: "prompt",
-            retries: 0,
+            retries: 2,
             content: `Solve the programming challenge following the rules and constraints as closely as possible. Your objective is only to maximize the chances of success.
                The code:
                - must be a standalone ECMAScript module with no dependencies.
@@ -78,6 +78,30 @@ const singlechallenge = {
                     type: "filter",
                     filter: "$.code",
                     policy: "retry",
+                },
+                {
+                    type: "filter",
+                    policy: "append",
+                    filter: "$.public_tests_passed",
+                    overrides: {
+                        content: `Here are the results of testing your code:
+                            {{#each res in await model.$.public_test_results}}
+                               - Test Result: {{scope.index}} -
+                               {{#if await res.status == "pass"}}
+                               Success: {{await res.message}}. Congratulations, no errors detected!
+                               {{#elseif await res.error == "SyntaxError"}}
+                               Syntax Error Detected: {{await res.message}}. Please check your syntax.
+                               {{#elseif await res.error == "Timeout"}}
+                               Timeout Error: {{await res.message}}. Consider optimizing your code for better performance.
+                               {{#elseif await res.error == "RuntimeError"}}
+                               Runtime Error: {{await res.message}}. Ensure all variables are defined and accessible.
+                               {{#elseif await res.error == "TypeError"}}
+                               Type Error: {{await res.message}}. Verify that your data types are correct.
+                               {{#else}}
+                               Unknown Error: {{await res.message}}. Review the code for potential issues.
+                               {{/if}}
+                           {{/each}}`,
+                    },
                 },
             ],
             finally: [
