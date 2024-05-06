@@ -620,7 +620,10 @@ async function executeDSPL(
         // console.log("Element messages:", elementMessages);
         context.history.push(...elementMessages);
         steps.push({
-            blackboard: await context.blackboard._obj,
+            blackboard:
+                Deno.env.get("META_OMIT_HISTORY") === "true"
+                    ? undefined
+                    : await context.blackboard._obj,
             ...rest,
             step: element,
             trace: elementMessages,
