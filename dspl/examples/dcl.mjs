@@ -151,7 +151,7 @@ const fullchallenges = {
                                     );
                                 },
                             },
-                        }),
+                        }).then((challenges) => challenges.slice(0, 1)),
                 },
                 challengesJSON: {
                     get: async ({ challenges }) => {
@@ -303,7 +303,7 @@ Enclose your code in a markdown codeblock.`,
                                     response
                                 )?.[1],
                         },
-                        retries: 0,
+                        retries: 5,
                         guards: [
                             {
                                 type: "filter",
