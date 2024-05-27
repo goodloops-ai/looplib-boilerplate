@@ -55,8 +55,10 @@ export const runTest = async (
                 shouldInterruptAfterDeadline(Date.now() + timeout)
             );
             vm.runtime.setMemoryLimit(memoryLimit);
+            const start = Date.now();
             vm.unwrapResult(vm.evalCode(evalCode, "eval.js")).dispose();
             result = JSON.parse(vm.getString(vm.getProp(vm.global, "result")));
+            result.time = Date.now() - start;
         } catch (e) {
             result = {
                 status: "error",
