@@ -46,7 +46,7 @@ export const runTest = async (
             message: pass ? "Test passed" : \`Expected \${expected}, got \${got}\`,
             input,
             got,
-            expected,
+            ...(pass ? {}: {expected}),
           });
         `;
 
