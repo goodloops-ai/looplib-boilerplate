@@ -78,7 +78,12 @@ export const runTest = async (
 export const runTests = async (code, tests, options = {}) => {
     const results = [];
     for (const test of tests) {
-        const result = await runTest(code, test, 10000);
+        const result = await runTest(
+            code,
+            test,
+            options.timeout,
+            options.memoryLimit
+        );
         results.push(result);
         if (options.breakOnFailure && result.status !== "pass") {
             break;
