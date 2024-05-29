@@ -10,8 +10,9 @@ import pLimit from "https://esm.sh/p-limit";
 import he from "https://esm.sh/he";
 import DSPL from "./schemas.mjs";
 import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
-import { Readability } from "https://esm.sh/@mozilla/readability";
-
+import { Readability } from "https://esm.sh/@mozilla/readability"; // Import Puppeteer from the Deno third-party module repository
+import puppeteer from "https://deno.land/x/puppeteer@16.2.0/mod.ts";
+import { getChatGPTEncoding } from "./tokens.mjs";
 // import EpubGenerator from "https://esm.sh/epub-gen";
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
 await load({ export: true });
@@ -126,7 +127,7 @@ const llm = async (history, config, file) => {
                 content: JSON_INSTRUCT(),
             });
         }
-        // console.log("Messages:", messages);
+        console.log("Messages:", messages);
         console.log("N:", n);
         let response,
             tries = 0;
@@ -184,6 +185,11 @@ const llm = async (history, config, file) => {
             return message;
         });
 
+        const tokens = {
+            input: await getChatGPTEncoding(messages),
+            output: await getChatGPTEncoding(assistantMessages),
+        };
+
         const newHistory =
             assistantMessages.length > 1
                 ? [
@@ -193,9 +199,21 @@ const llm = async (history, config, file) => {
                           content: assistantMessages.map(
                               ({ content }) => content
                           ),
+                          meta: {
+                              tokens,
+                          },
                       },
                   ]
-                : [...history, ...assistantMessages];
+                : [
+                      ...history,
+                      ...assistantMessages.map((msg) => ({
+                          role: "assistant",
+                          content: msg.content,
+                          meta: {
+                              tokens,
+                          },
+                      })),
+                  ];
         // console.log("New history:", newHistory);
         console.log("LATEST:", JSON.stringify(newHistory.slice(-2), null, 2));
         return newHistory;
@@ -229,11 +247,7 @@ const elementModules = {
     },
     prompt: {
         async execute({ content, ...config }, context) {
-            const processedContent = he.decode(
-                await moe.compile(content, {
-                    asyncTemplate: true,
-                })(context.blackboard)
-            );
+            const processedContent = he.decode(content);
             const newContext = {
                 ...context,
                 history: [
@@ -253,8 +267,24 @@ const elementModules = {
             return newMessages.slice(originalHistory);
         },
     },
+    fetch: {
+        async execute({ url, hide, json }, context, config) {
+            console.log("Fetching URL:", url, hide, json, config);
+            const response = await fetch(url);
+            const data = json ? await response.json() : await response.text();
+            return [
+                {
+                    role: "system",
+                    content: data,
+                    meta: {
+                        hidden: hide,
+                    },
+                },
+            ];
+        },
+    },
     readability: {
-        async execute({ url, hide }, context) {
+        async execute({ url, hide, usePuppeteer }, context) {
             try {
                 const response = await fetch(url);
                 if (!response.ok) {
@@ -301,6 +331,7 @@ const elementModules = {
                 history,
                 for: forConfig,
                 while: whileConfig,
+                if: ifConfig,
             } = elementData;
 
             const clonedDspl = _.cloneDeepWith(dspl, (value) => {
@@ -401,6 +432,18 @@ const elementModules = {
                     if (i < max) {
                         runs.push(await executeFlow());
                     }
+                }
+            } else if (ifConfig) {
+                const condition = ifConfig;
+                const path = condition
+                    .split(".")
+                    .map((k) => k.replace("$", "blackboard"));
+                const pass = await path.reduce(
+                    (acc, key) => acc.then((o) => o[key]),
+                    Promise.resolve(context)
+                );
+                if (pass) {
+                    runs.push(await executeFlow());
                 }
             } else {
                 runs.push(await executeFlow());
