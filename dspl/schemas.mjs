@@ -100,6 +100,7 @@ const PromptStep = BaseStep.extend({
         ),
     n: z
         .number()
+        .or(z.array(z.any()))
         .optional()
         .describe(
             "The number of responses to generate from the LLM for the prompt."
