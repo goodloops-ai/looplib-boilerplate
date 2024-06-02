@@ -44,7 +44,7 @@ const llm = async (history, config, file) => {
 
     if (Array.isArray(n)) {
         const res = await Promise.all(
-            n.map(async (n) => await llm(history, { ...config, ...n }))
+            n.map(async (n) => await llm(history, { ...config, ...n, n: 1 }))
         );
         const messages = res.map((r) => r.slice(-1).pop().content);
         return [
