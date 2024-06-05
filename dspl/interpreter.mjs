@@ -36,7 +36,6 @@ const llm = async (history, config, file) => {
         showHidden,
         n = 1,
     } = config;
-
     _model =
         _model.startsWith("gpt") && USE_OPENROUTER
             ? "openai/" + _model
@@ -55,7 +54,7 @@ const llm = async (history, config, file) => {
                 meta: {
                     hidden: config.hide,
                     n: n,
-                    history: META_OMIT_HISTORY ? undefined : history,
+                    history: res[0].meta.history,
                 },
             },
         ];
@@ -74,7 +73,7 @@ const llm = async (history, config, file) => {
                 meta: {
                     hidden: config.hide,
                     n: n,
-                    history: META_OMIT_HISTORY ? undefined : history,
+                    history: res[0].meta.history,
                 },
             },
         ];
@@ -110,6 +109,13 @@ const llm = async (history, config, file) => {
     //     console.log(JSON.stringify(history, null, 2));
     //     // Deno.exit();
     // }
+
+    const metahistory = META_OMIT_HISTORY
+        ? []
+        : messages.map(({ role, content }) => ({
+              role,
+              content,
+          }));
     const openai = new OpenAI({
         dangerouslyAllowBrowser: true,
         baseURL: USE_OPENROUTER ? "https://openrouter.ai/api/v1" : undefined,
@@ -200,6 +206,7 @@ const llm = async (history, config, file) => {
                               ({ content }) => content
                           ),
                           meta: {
+                              history: metahistory,
                               tokens,
                           },
                       },
@@ -210,6 +217,7 @@ const llm = async (history, config, file) => {
                           role: "assistant",
                           content: msg.content,
                           meta: {
+                              history: metahistory,
                               tokens,
                           },
                       })),
@@ -259,7 +267,7 @@ const elementModules = {
             return messages;
         },
         async runLLM(context, config = {}) {
-            const originalHistory = context.history.slice(0).length;
+            const originalHistory = context.history.slice(0).length - 1;
             const newMessages = await llm(context.history, {
                 ...context.blackboard.$.prompt,
                 ...config,
@@ -827,7 +835,7 @@ async function executeStep(
 
         if (!message) {
             console.error("Guard failed to provide message:", guard, success);
-            Deno.exit();
+            // Deno.exit();
         }
 
         if (!success) {
